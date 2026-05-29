@@ -294,6 +294,14 @@ const paragraphNodeSpec: NodeSpec = {
     bookmarks: { default: null },
     _originalFormatting: { default: null },
     _sectionProperties: { default: null },
+    // Tracked structural revisions on the paragraph mark itself.
+    // See ECMA-376 §17.13.5 — w:ins / w:del inside w:pPr/w:rPr.
+    pPrIns: { default: null },
+    pPrDel: { default: null },
+    // Paragraph property changes (w:pPrChange), array of prior-snapshot
+    // entries. Parser/serializer already model this — schema attr lets
+    // the data survive the toProseDoc → fromProseDoc round-trip.
+    pPrChange: { default: null },
   },
   parseDOM: [
     {
@@ -377,6 +385,24 @@ const paragraphNodeSpec: NodeSpec = {
     if (attrs.sectionBreakType) {
       domAttrs['data-section-break'] = attrs.sectionBreakType;
       domAttrs.class = (domAttrs.class ? domAttrs.class + ' ' : '') + 'docx-section-break';
+    }
+
+    if (attrs.pPrIns || attrs.pPrDel) {
+      const rev = attrs.pPrIns ?? attrs.pPrDel!;
+      const kindClass = attrs.pPrIns ? 'ep-revision-ins' : 'ep-revision-del';
+      domAttrs.class =
+        (domAttrs.class ? domAttrs.class + ' ' : '') + 'ep-revision-pmark ' + kindClass;
+      domAttrs['data-revision-id'] = String(rev.revisionId);
+      domAttrs['data-revision-author'] = rev.author;
+      if (rev.date) domAttrs['data-revision-date'] = rev.date;
+    } else if (Array.isArray(attrs.pPrChange) && attrs.pPrChange.length > 0) {
+      // Property-change-only paragraph (no structural pPrIns/pPrDel).
+      // Surface the first entry's id so sidebar click-to-jump can anchor.
+      const first = attrs.pPrChange[0];
+      domAttrs.class = (domAttrs.class ? domAttrs.class + ' ' : '') + 'ep-revision-prop-change';
+      domAttrs['data-revision-id'] = String(first.info.id);
+      domAttrs['data-revision-author'] = first.info.author;
+      if (first.info.date) domAttrs['data-revision-date'] = first.info.date;
     }
 
     return ['p', domAttrs, 0];

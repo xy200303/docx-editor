@@ -369,18 +369,19 @@ function extractRPrInner(rPrXml: string): string {
 }
 
 function serializeRunPropertyChange(change: RunPropertyChange): string {
+  // NOTE: `w:rsid` is NOT an attribute of `CT_TrackChange` (wml.xsd:803),
+  // and `CT_RPrChange` (wml.xsd:1820) does not add it. Some legacy code
+  // stored it on `PropertyChangeInfo`; strict OOXML readers reject the
+  // unknown attribute. Always omit on emit. Matches the
+  // paragraphSerializer / tableSerializer fix earlier on this branch.
   const normalizedId = Number.isInteger(change.info.id) && change.info.id >= 0 ? change.info.id : 0;
   const authorCandidate = typeof change.info.author === 'string' ? change.info.author.trim() : '';
   const normalizedAuthor = authorCandidate.length > 0 ? authorCandidate : 'Unknown';
   const normalizedDate = typeof change.info.date === 'string' ? change.info.date.trim() : undefined;
-  const normalizedRsid = typeof change.info.rsid === 'string' ? change.info.rsid.trim() : undefined;
   const attrs = [`w:id="${normalizedId}"`, `w:author="${escapeXml(normalizedAuthor)}"`];
 
   if (normalizedDate) {
     attrs.push(`w:date="${escapeXml(normalizedDate)}"`);
-  }
-  if (normalizedRsid) {
-    attrs.push(`w:rsid="${escapeXml(normalizedRsid)}"`);
   }
 
   const previousRPrXml = serializeTextFormatting(change.previousFormatting) || '<w:rPr/>';

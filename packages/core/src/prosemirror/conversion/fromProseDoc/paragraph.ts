@@ -23,13 +23,7 @@ import type {
   TrackedChangeInfo,
 } from '../../../types/document';
 import type { ParagraphAttrs } from '../../schema/nodes';
-import {
-  buildDocumentTrackedChangeCounts,
-  getLinkKey,
-  getMarksKey,
-  marksToTextFormatting,
-  type TrackedChangeCounts,
-} from './marks';
+import { getLinkKey, getMarksKey, marksToTextFormatting } from './marks';
 import {
   createHyperlink,
   addNodeToHyperlink,
@@ -46,9 +40,9 @@ import {
 /**
  * Convert a ProseMirror paragraph node to our Paragraph type
  */
-export function convertPMParagraph(node: PMNode, documentCounts?: TrackedChangeCounts): Paragraph {
+export function convertPMParagraph(node: PMNode): Paragraph {
   const attrs = node.attrs as ParagraphAttrs;
-  let content = insertCommentRanges(extractParagraphContent(node, documentCounts), node);
+  let content = insertCommentRanges(extractParagraphContent(node), node);
 
   // Emit BookmarkStart/End from bookmarks attr (for TOC anchors, cross-references)
   const bookmarks = attrs.bookmarks as Array<{ id: number; name: string }> | undefined;
@@ -77,6 +71,26 @@ export function convertPMParagraph(node: PMNode, documentCounts?: TrackedChangeC
   // drop the break Word recorded for paginating this paragraph.
   if (attrs.renderedPageBreakBefore) {
     paragraph.renderedPageBreakBefore = true;
+  }
+
+  // Round-trip paragraph-mark tracked-change attrs.
+  if (attrs.pPrIns) {
+    paragraph.pPrIns = {
+      id: attrs.pPrIns.revisionId,
+      author: attrs.pPrIns.author,
+      ...(attrs.pPrIns.date ? { date: attrs.pPrIns.date } : {}),
+    };
+  }
+  if (attrs.pPrDel) {
+    paragraph.pPrDel = {
+      id: attrs.pPrDel.revisionId,
+      author: attrs.pPrDel.author,
+      ...(attrs.pPrDel.date ? { date: attrs.pPrDel.date } : {}),
+    };
+  }
+  // Round-trip paragraph-property-change history.
+  if (attrs.pPrChange && attrs.pPrChange.length > 0) {
+    paragraph.propertyChanges = attrs.pPrChange;
   }
 
   // Restore full section properties (round-trip) or fallback to break type only
@@ -244,12 +258,8 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
  * Coalesces consecutive text with the same marks into single Runs
  * for efficient DOCX representation.
  */
-function extractParagraphContent(
-  paragraph: PMNode,
-  documentCounts?: TrackedChangeCounts
-): ParagraphContent[] {
+function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
   const content: ParagraphContent[] = [];
-  const trackedChangeCounts = documentCounts ?? buildDocumentTrackedChangeCounts(paragraph);
 
   // Track current run being built
   let currentRun: Run | null = null;
@@ -314,10 +324,13 @@ function extractParagraphContent(
         author: (changeMark.attrs.author as string) || 'Unknown',
         date: (changeMark.attrs.date as string) || undefined,
       };
-      const revisionId = info.id;
-      const hasInsertionForId = (trackedChangeCounts.insertionById.get(revisionId) ?? 0) > 0;
-      const hasDeletionForId = (trackedChangeCounts.deletionById.get(revisionId) ?? 0) > 0;
-      const isMovePair = hasInsertionForId && hasDeletionForId;
+      // Only treat as a move pair when the parser explicitly flagged the
+      // mark as having originated from `<w:moveFrom>`/`<w:moveTo>`. `w:id`
+      // is not required to be unique per ECMA-376, so id coincidence
+      // between an insertion and a deletion is not a reliable signal —
+      // the suggestion-mode "replace" flow legitimately shares a date but
+      // mints distinct ids precisely to dodge this trap.
+      const isMovePair = changeMark.attrs.isMovePair === true;
 
       if (insertionMark) {
         if (isMovePair) {

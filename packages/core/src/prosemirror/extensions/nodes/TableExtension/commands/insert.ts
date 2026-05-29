@@ -13,17 +13,53 @@ import type { Node as PMNode, Schema } from 'prosemirror-model';
 import { type Command, type EditorState, type Transaction, TextSelection } from 'prosemirror-state';
 import { getTableContext } from '../context';
 import { buildCellAttrsFromTemplate } from './helpers';
+import { makeRevisionInfo as makeSuggestionInfo } from '../../../../plugins/revisionIds';
+
+/**
+ * Build a tracked-row-insertion row + cells. Caller decides where to insert.
+ */
+function buildSuggestingRow(
+  schema: Schema,
+  templateRow: PMNode,
+  info: import('../../../../../types/content/trackedChange').RevisionInfo
+): PMNode {
+  const cells: PMNode[] = [];
+  templateRow.forEach((cell) => {
+    const paragraph = schema.nodes.paragraph.create();
+    const baseAttrs = buildCellAttrsFromTemplate(cell);
+    const cellWithMarker = { ...baseAttrs, cellMarker: { kind: 'ins' as const, info } };
+    cells.push(schema.nodes.tableCell.create(cellWithMarker, paragraph));
+  });
+  return schema.nodes.tableRow.create(
+    {
+      height: templateRow.attrs.height ?? 360,
+      heightRule: templateRow.attrs.heightRule ?? 'atLeast',
+      // Carry header status from the template row so inserting under a
+      // header keeps the new row a header (and inserting under a body
+      // keeps it a body row).
+      isHeader: templateRow.attrs.isHeader ?? false,
+      trIns: info,
+    },
+    cells
+  );
+}
 
 /**
  * Build a fresh table node with the given dimensions and border color.
  * Default border is thin (4 eighths-of-a-point) black single.
+ *
+ * If `info` is provided (suggesting mode), every row gets `trIns` and
+ * every cell gets `cellMarker: { kind: 'ins', info }` so the new table
+ * round-trips as a fully tracked addition — matches Word's convention
+ * for "insert table while track-changes is on".
  */
 export function makeCreateTable(schema: Schema) {
   return function createTable(
     rows: number,
     cols: number,
     borderColor: string = '000000',
-    contentWidthTwips: number = 9360
+    contentWidthTwips: number = 9360,
+    info?: import('../../../../../types/content/trackedChange').RevisionInfo | null
   ): PMNode {
     const tableRows: PMNode[] = [];
     const colWidthTwips = Math.floor(contentWidthTwips / cols);
@@ -49,14 +85,17 @@ export function makeCreateTable(schema: Schema) {
           width: colWidthTwips,
           widthType: 'dxa',
         };
+        if (info) {
+          cellAttrs.cellMarker = { kind: 'ins' as const, info };
+        }
         cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
       }
-      tableRows.push(
-        schema.nodes.tableRow.create(
-          { height: defaultRowHeightTwips, heightRule: defaultRowHeightRule },
-          cells
-        )
-      );
+      const rowAttrs: Record<string, unknown> = {
+        height: defaultRowHeightTwips,
+        heightRule: defaultRowHeightRule,
+      };
+      if (info) rowAttrs.trIns = info;
+      tableRows.push(schema.nodes.tableRow.create(rowAttrs, cells));
     }
 
     const columnWidths = Array(cols).fill(colWidthTwips);
@@ -113,7 +152,12 @@ export function makeInsertTable(schema: Schema) {
             break;
           }
         }
-        const table = createTable(rows, cols, borderColor, contentWidthTwips);
+        // In suggesting mode, mint one revision triple and seed every row
+        // and cell of the new table with trIns + cellMarker:ins. The new
+        // table round-trips as a tracked addition; reject removes the whole
+        // table via resolveById, accept clears the markers.
+        const suggestingInfo = makeSuggestionInfo(state);
+        const table = createTable(rows, cols, borderColor, contentWidthTwips, suggestingInfo);
         const emptyParagraph = schema.nodes.paragraph.create();
 
         const $insert = state.doc.resolve(insertPos);
@@ -154,19 +198,25 @@ export function makeAddRowAbove(schema: Schema): Command {
     if (dispatch) {
       const tr = state.tr;
       const rowNode = context.table.child(context.rowIndex);
-      const cells: PMNode[] = [];
-      rowNode.forEach((cell) => {
-        const paragraph = schema.nodes.paragraph.create();
-        const cellAttrs = buildCellAttrsFromTemplate(cell);
-        cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
-      });
-      const newRow = schema.nodes.tableRow.create(
-        {
-          height: rowNode.attrs.height ?? 360,
-          heightRule: rowNode.attrs.heightRule ?? 'atLeast',
-        },
-        cells
-      );
+      const info = makeSuggestionInfo(state);
+      let newRow: PMNode;
+      if (info) {
+        newRow = buildSuggestingRow(schema, rowNode, info);
+      } else {
+        const cells: PMNode[] = [];
+        rowNode.forEach((cell) => {
+          const paragraph = schema.nodes.paragraph.create();
+          const cellAttrs = buildCellAttrsFromTemplate(cell);
+          cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
+        });
+        newRow = schema.nodes.tableRow.create(
+          {
+            height: rowNode.attrs.height ?? 360,
+            heightRule: rowNode.attrs.heightRule ?? 'atLeast',
+          },
+          cells
+        );
+      }
 
       let rowPos = context.tablePos + 1;
       for (let i = 0; i < context.rowIndex; i++) {
@@ -194,19 +244,25 @@ export function makeAddRowBelow(schema: Schema): Command {
     if (dispatch) {
       const tr = state.tr;
       const rowNode = context.table.child(context.rowIndex);
-      const cells: PMNode[] = [];
-      rowNode.forEach((cell) => {
-        const paragraph = schema.nodes.paragraph.create();
-        const cellAttrs = buildCellAttrsFromTemplate(cell);
-        cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
-      });
-      const newRow = schema.nodes.tableRow.create(
-        {
-          height: rowNode.attrs.height ?? 360,
-          heightRule: rowNode.attrs.heightRule ?? 'atLeast',
-        },
-        cells
-      );
+      const info = makeSuggestionInfo(state);
+      let newRow: PMNode;
+      if (info) {
+        newRow = buildSuggestingRow(schema, rowNode, info);
+      } else {
+        const cells: PMNode[] = [];
+        rowNode.forEach((cell) => {
+          const paragraph = schema.nodes.paragraph.create();
+          const cellAttrs = buildCellAttrsFromTemplate(cell);
+          cells.push(schema.nodes.tableCell.create(cellAttrs, paragraph));
+        });
+        newRow = schema.nodes.tableRow.create(
+          {
+            height: rowNode.attrs.height ?? 360,
+            heightRule: rowNode.attrs.heightRule ?? 'atLeast',
+          },
+          cells
+        );
+      }
 
       let rowPos = context.tablePos + 1;
       for (let i = 0; i <= context.rowIndex; i++) {
@@ -220,6 +276,10 @@ export function makeAddRowBelow(schema: Schema): Command {
   };
 }
 
+// TODO(Phase 2c): wrap with `makeSuggestionInfo` and set
+// `cellMarker: { kind: 'ins', info }` on each new cell when suggesting mode
+// is active. See `tracked-structural-tables/spec.md` — "Track column
+// insertion and deletion in suggesting mode."
 export function makeAddColumnLeft(schema: Schema): Command {
   return (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
     const context = getTableContext(state);
@@ -316,6 +376,8 @@ export function makeAddColumnLeft(schema: Schema): Command {
   };
 }
 
+// TODO(Phase 2c): wrap with `makeSuggestionInfo` — same pattern as
+// `makeAddColumnLeft` above.
 export function makeAddColumnRight(schema: Schema): Command {
   return (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
     const context = getTableContext(state);

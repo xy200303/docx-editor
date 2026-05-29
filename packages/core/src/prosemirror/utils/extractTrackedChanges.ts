@@ -6,23 +6,25 @@
  * for replace ops).
  *
  * Pure function — no React, no Vue, no side effects. Single O(N) walk
- * over text nodes. Lifted from packages/react/src/hooks/useTrackedChanges.ts
- * so both adapters can call it directly.
- *
- * @remarks
- * Tagged `@internal` post-1.0 cut. Both adapters re-export this through
- * their own composables (`useTrackedChanges`); consumers should prefer
- * those. The subpath stays in `package.json` `exports` for back-compat;
- * expect it to move behind a public surface in a future major.
+ * over text nodes. Consumers building custom sidebars should prefer the
+ * adapter-specific wrappers (`useTrackedChanges` in
+ * `@eigenpal/docx-editor-react/hooks` and
+ * `@eigenpal/docx-editor-vue/composables`), which add the memoization
+ * and reactivity layer. Reach for the core function directly for
+ * server-side analysis or test fixtures.
  *
  * @packageDocumentation
- * @internal
+ * @public
  */
 import type { EditorState } from 'prosemirror-state';
 import type { Mark } from 'prosemirror-model';
 import type { TrackedChangeEntry } from '../../utils/comments';
 
-/** @internal */
+/**
+ * Output of {@link extractTrackedChanges}.
+ *
+ * @public
+ */
 export interface TrackedChangesResult {
   /** Tracked-change entries, sorted by document position, with adjacent same-revision entries merged. */
   entries: TrackedChangeEntry[];
@@ -38,7 +40,30 @@ const EMPTY_RESULT: TrackedChangesResult = {
   commentToRevision: new Map(),
 };
 
-/** @internal */
+/**
+ * Walk the PM doc and extract every tracked change as a flat list of
+ * `TrackedChangeEntry` plus a comment→revision overlap map. Adjacent
+ * inline marks coalesce by `(type, revisionId, author, date)`; a
+ * deletion immediately followed by an insertion (same author + same
+ * date) collapses into a single `replacement` entry; paragraph-mark
+ * cards (`paragraphMarkInsertion` / `paragraphMarkDeletion`) are
+ * hidden when an inline entry already covers their revision triple
+ * (one Accept clears every site of one conceptual change).
+ *
+ * Pure and deterministic. Returns `EMPTY_RESULT` on null state.
+ *
+ * @example
+ * ```ts
+ * import { extractTrackedChanges } from '@eigenpal/docx-editor-core/prosemirror/utils/extractTrackedChanges';
+ *
+ * const { entries, commentToRevision } = extractTrackedChanges(view.state);
+ * for (const e of entries) {
+ *   console.log(e.type, e.author, e.text);
+ * }
+ * ```
+ *
+ * @public
+ */
 export function extractTrackedChanges(state: EditorState | null): TrackedChangesResult {
   if (!state) return EMPTY_RESULT;
   const { doc, schema } = state;
@@ -50,6 +75,267 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
   const raw: TrackedChangeEntry[] = [];
   const commentToRevision = new Map<number, number>();
   doc.descendants((node, pos) => {
+    // Structural revisions on the paragraph mark itself
+    // (`<w:pPr><w:rPr><w:ins/>` / `<w:del/>`). Surface as their own entry
+    // types so the sidebar can label and dispatch them correctly.
+    if (node.type.name === 'paragraph') {
+      const ins = node.attrs.pPrIns as {
+        revisionId: number;
+        author: string;
+        date: string | null;
+      } | null;
+      const del = node.attrs.pPrDel as {
+        revisionId: number;
+        author: string;
+        date: string | null;
+      } | null;
+      if (ins) {
+        raw.push({
+          type: 'paragraphMarkInsertion',
+          text: node.textContent || '',
+          author: ins.author || '',
+          date: ins.date ?? undefined,
+          from: pos,
+          to: pos + node.nodeSize,
+          revisionId: ins.revisionId,
+        });
+      }
+      if (del) {
+        raw.push({
+          type: 'paragraphMarkDeletion',
+          text: node.textContent || '',
+          author: del.author || '',
+          date: del.date ?? undefined,
+          from: pos,
+          to: pos + node.nodeSize,
+          revisionId: del.revisionId,
+        });
+      }
+      // Paragraph-property changes — one entry per (id, author, date) entry
+      // in the pPrChange array. Reject restores prior values; accept clears.
+      const pPrChange = node.attrs.pPrChange as Array<{
+        info: { id: number; author: string; date?: string };
+      }> | null;
+      if (Array.isArray(pPrChange)) {
+        for (const entry of pPrChange) {
+          raw.push({
+            type: 'paragraphPropertiesChanged',
+            text: node.textContent || '',
+            author: entry.info.author || '',
+            date: entry.info.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: entry.info.id,
+          });
+        }
+      }
+      // Descend into paragraph content; do not return here.
+    }
+
+    // Table-row revisions (`<w:trPr><w:ins/>` / `<w:del/>` / `<w:trPrChange>`).
+    if (node.type.name === 'tableRow') {
+      const trIns = node.attrs.trIns as {
+        revisionId: number;
+        author: string;
+        date: string | null;
+      } | null;
+      const trDel = node.attrs.trDel as {
+        revisionId: number;
+        author: string;
+        date: string | null;
+      } | null;
+      if (trIns) {
+        raw.push({
+          type: 'rowInserted',
+          text: node.textContent || '',
+          author: trIns.author || '',
+          date: trIns.date ?? undefined,
+          from: pos,
+          to: pos + node.nodeSize,
+          revisionId: trIns.revisionId,
+        });
+      }
+      if (trDel) {
+        raw.push({
+          type: 'rowDeleted',
+          text: node.textContent || '',
+          author: trDel.author || '',
+          date: trDel.date ?? undefined,
+          from: pos,
+          to: pos + node.nodeSize,
+          revisionId: trDel.revisionId,
+        });
+      }
+      const trPrChange = node.attrs.trPrChange as Array<{
+        info: { id: number; author: string; date?: string };
+      }> | null;
+      if (Array.isArray(trPrChange)) {
+        for (const entry of trPrChange) {
+          if (!entry?.info || typeof entry.info.id !== 'number') continue;
+          raw.push({
+            type: 'rowPropertiesChanged',
+            text: node.textContent || '',
+            author: entry.info.author || '',
+            date: entry.info.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: entry.info.id,
+          });
+        }
+      }
+      // Descend into cells.
+    }
+
+    // Table-cell revisions (`<w:cellIns>` / `<w:cellDel>` / `<w:cellMerge>`,
+    // `<w:tcPrChange>`).
+    if (node.type.name === 'tableCell' || node.type.name === 'tableHeader') {
+      const cellMarker = node.attrs.cellMarker as {
+        kind: 'ins' | 'del' | 'merge';
+        info: { revisionId: number; author: string; date: string | null };
+      } | null;
+      if (cellMarker?.info && typeof cellMarker.info.revisionId === 'number') {
+        const kindToType = {
+          ins: 'cellInserted' as const,
+          del: 'cellDeleted' as const,
+          merge: 'cellMerged' as const,
+        };
+        const resolvedType = kindToType[cellMarker.kind];
+        if (resolvedType) {
+          raw.push({
+            type: resolvedType,
+            text: node.textContent || '',
+            author: cellMarker.info.author || '',
+            date: cellMarker.info.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: cellMarker.info.revisionId,
+          });
+        }
+      }
+      const tcPrChange = node.attrs.tcPrChange as Array<{
+        info: { id: number; author: string; date?: string };
+      }> | null;
+      if (Array.isArray(tcPrChange)) {
+        for (const entry of tcPrChange) {
+          if (!entry?.info || typeof entry.info.id !== 'number') continue;
+          raw.push({
+            type: 'cellPropertiesChanged',
+            text: node.textContent || '',
+            author: entry.info.author || '',
+            date: entry.info.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: entry.info.id,
+          });
+        }
+      }
+    }
+
+    // Table-level property change (`<w:tblPrChange>`).
+    if (node.type.name === 'table') {
+      const tblPrChange = node.attrs.tblPrChange as Array<{
+        info: { id: number; author: string; date?: string };
+      }> | null;
+      if (Array.isArray(tblPrChange)) {
+        for (const entry of tblPrChange) {
+          if (!entry?.info || typeof entry.info.id !== 'number') continue;
+          raw.push({
+            type: 'tablePropertiesChanged',
+            text: '',
+            author: entry.info.author || '',
+            date: entry.info.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: entry.info.id,
+          });
+        }
+      }
+
+      // Whole-table insertion / deletion: when every row carries a trIns
+      // (or trDel) from the SAME (author, date) — not necessarily the same
+      // `w:id`, since foreign editors mint a fresh id per row — surface ONE
+      // `tableInserted` / `tableDeleted` entry. The per-row revision ids
+      // get tucked into `coalescedRevisionIds` so accepting the card clears
+      // every row's marker in one go.
+      const firstRow = node.firstChild;
+      const firstIns = firstRow?.attrs.trIns as
+        | {
+            revisionId: number;
+            author?: string;
+            date?: string | null;
+          }
+        | null
+        | undefined;
+      const firstDel = firstRow?.attrs.trDel as
+        | {
+            revisionId: number;
+            author?: string;
+            date?: string | null;
+          }
+        | null
+        | undefined;
+      const sharedAttr = firstIns ? 'trIns' : firstDel ? 'trDel' : null;
+      if (sharedAttr) {
+        const sharedRev = (firstIns ?? firstDel) as {
+          revisionId: number;
+          author: string;
+          date: string | null;
+        };
+        let allShare = true;
+        const rowRevIds: number[] = [];
+        node.forEach((row) => {
+          if (row.type.name !== 'tableRow') {
+            allShare = false;
+            return;
+          }
+          const v = row.attrs[sharedAttr] as
+            | { revisionId: number; author?: string; date?: string | null }
+            | null
+            | undefined;
+          if (
+            !v ||
+            (v.author ?? '') !== (sharedRev.author ?? '') ||
+            (v.date ?? null) !== (sharedRev.date ?? null)
+          ) {
+            allShare = false;
+            return;
+          }
+          rowRevIds.push(v.revisionId);
+        });
+        if (allShare) {
+          // Exclude text inside deletion marks: the empty-vs-content switch
+          // downstream compares `text.trim().length` to decide whether to
+          // surface "Inserted table" or defer to an inline card. Deletion-
+          // marked text is still rendered in the doc but represents removed
+          // content, so it shouldn't count as "the table has content".
+          let visibleText = '';
+          if (deletionType) {
+            node.descendants((child) => {
+              if (child.isText && !child.marks.some((m) => m.type === deletionType)) {
+                visibleText += child.text || '';
+              }
+            });
+          } else {
+            visibleText = node.textContent || '';
+          }
+          const primaryId = sharedRev.revisionId;
+          const extraIds = rowRevIds.filter(
+            (id, idx) => id !== primaryId && rowRevIds.indexOf(id) === idx
+          );
+          raw.push({
+            type: sharedAttr === 'trIns' ? 'tableInserted' : 'tableDeleted',
+            text: visibleText,
+            author: sharedRev.author || '',
+            date: sharedRev.date ?? undefined,
+            from: pos,
+            to: pos + node.nodeSize,
+            revisionId: primaryId,
+            ...(extraIds.length > 0 ? { coalescedRevisionIds: extraIds } : {}),
+          });
+        }
+      }
+    }
+
     if (!node.isText) return;
     let tcMark: Mark | null = null;
     for (const mark of node.marks) {
@@ -76,20 +362,107 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
     }
   });
 
-  // Merge adjacent entries with the same revisionId and type into one
-  const merged: TrackedChangeEntry[] = [];
+  // Coalesce structural-revision entries that share a `(id, author, date)`
+  // triple across nested nodes. A row-insertion typically produces one
+  // `rowInserted` entry on the `<tr>` PLUS one `cellInserted` entry per
+  // cell, all sharing the triple. The spec says these should render as a
+  // single sidebar row (per `tracked-structural-tables/spec.md` "Sidebar
+  // groups co-revision-id entries as one"). Prefer the broader entry:
+  // priority is `table > row > cell > paragraph-mark`.
+  //
+  // Inline insertion/deletion entries are NOT coalesced here — the
+  // adjacent-merge pass below handles them.
+  //
+  // Single-pass: track each triple's slot index in `ordered` so an
+  // in-place replacement is O(1) (vs `ordered.indexOf(existing)` which
+  // would be O(n) inside an O(n) loop).
+  const STRUCTURAL_PRIORITY: Record<string, number> = {
+    tableInserted: 6,
+    tableDeleted: 6,
+    tablePropertiesChanged: 5,
+    rowInserted: 4,
+    rowDeleted: 4,
+    rowPropertiesChanged: 4,
+    cellInserted: 3,
+    cellDeleted: 3,
+    cellMerged: 3,
+    cellPropertiesChanged: 3,
+    paragraphMarkInsertion: 2,
+    paragraphMarkDeletion: 2,
+    paragraphPropertiesChanged: 2,
+  };
+  const isStructuralType = (t: TrackedChangeEntry['type']) => t in STRUCTURAL_PRIORITY;
+  const slotByKey = new Map<string, number>();
+  const ordered: TrackedChangeEntry[] = [];
+  // Helper: collect every distinct `w:id` involved in coalescing the dropped
+  // entry into the survivor, EXCLUDING the survivor's own primary id.
+  const mergeIds = (survivor: TrackedChangeEntry, dropped: TrackedChangeEntry): number[] => {
+    const ids = new Set<number>(survivor.coalescedRevisionIds ?? []);
+    for (const id of dropped.coalescedRevisionIds ?? []) ids.add(id);
+    ids.add(dropped.revisionId);
+    ids.delete(survivor.revisionId);
+    return [...ids];
+  };
   for (const entry of raw) {
-    const last = merged[merged.length - 1];
-    if (
-      last &&
-      last.revisionId === entry.revisionId &&
-      last.type === entry.type &&
-      last.to === entry.from
-    ) {
-      last.text += entry.text;
-      last.to = entry.to;
+    if (!isStructuralType(entry.type)) {
+      ordered.push(entry);
+      continue;
+    }
+    // Key by (author, date) only — foreign editors mint a fresh `w:id` per
+    // atomic edit, so triples that differ only in id are still one logical
+    // revision burst and should share a sidebar card. Same-author bursts
+    // at distinct ms-precision timestamps stay separate.
+    const key = `${entry.author}|${entry.date ?? ''}`;
+    const slot = slotByKey.get(key);
+    if (slot === undefined) {
+      slotByKey.set(key, ordered.push(entry) - 1);
+      continue;
+    }
+    const existing = ordered[slot]!;
+    const incomingPri = STRUCTURAL_PRIORITY[entry.type] ?? 0;
+    const existingPri = STRUCTURAL_PRIORITY[existing.type] ?? 0;
+    if (incomingPri > existingPri) {
+      // Incoming wins (broader scope). Carry the existing id forward.
+      ordered[slot] = { ...entry, coalescedRevisionIds: mergeIds(entry, existing) };
     } else {
+      // Existing stays; absorb the dropped id so accept clears every site.
+      ordered[slot] = { ...existing, coalescedRevisionIds: mergeIds(existing, entry) };
+    }
+  }
+
+  // Merge inline insertion/deletion entries that share a logical revision
+  // burst (same type, author, date) into a single sidebar card. The
+  // suggesting-mode plugin coalesces a continuous editing run under one
+  // revisionId — including runs split across paragraph boundaries — but
+  // foreign editors mint a fresh id per atomic edit, so dropping the
+  // revisionId from the key keeps both cases consistent.
+  const inlineGroups = new Map<string, TrackedChangeEntry>();
+  const merged: TrackedChangeEntry[] = [];
+  for (const entry of ordered) {
+    const isInlineType = entry.type === 'insertion' || entry.type === 'deletion';
+    if (!isInlineType) {
       merged.push({ ...entry });
+      continue;
+    }
+    const key = `${entry.type}|${entry.author}|${entry.date ?? ''}`;
+    const group = inlineGroups.get(key);
+    if (group) {
+      // Cross-paragraph runs get a space separator; literally adjacent runs
+      // concatenate directly.
+      const sep = group.to === entry.from ? '' : ' ';
+      group.text += sep + entry.text;
+      group.to = entry.to;
+      if (entry.revisionId !== group.revisionId) {
+        const ids = new Set<number>(group.coalescedRevisionIds ?? []);
+        for (const id of entry.coalescedRevisionIds ?? []) ids.add(id);
+        ids.add(entry.revisionId);
+        ids.delete(group.revisionId);
+        group.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
+      }
+    } else {
+      const copy = { ...entry };
+      inlineGroups.set(key, copy);
+      merged.push(copy);
     }
   }
 
@@ -124,5 +497,89 @@ export function extractTrackedChanges(state: EditorState | null): TrackedChanges
       final.push(curr);
     }
   }
-  return { entries: final, commentToRevision };
+
+  // Final pass: if a paragraph-mark entry (pPrIns / pPrDel) shares its
+  // (author, date) with an inline entry (insertion / deletion / replacement),
+  // the inline entry already represents the whole conceptual edit — hide
+  // the structural sibling so the sidebar shows ONE card per change.
+  // Migrate the hidden entry's `coalescedRevisionIds` (and primary id) to
+  // the surviving inline entry so one Accept still clears every site.
+  const inlineByKey = new Map<string, TrackedChangeEntry>();
+  for (const e of final) {
+    if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
+      const k = `${e.author}|${e.date ?? ''}`;
+      if (!inlineByKey.has(k)) inlineByKey.set(k, e);
+    }
+  }
+  for (const e of final) {
+    if (e.type !== 'paragraphMarkInsertion' && e.type !== 'paragraphMarkDeletion') continue;
+    const survivor = inlineByKey.get(`${e.author}|${e.date ?? ''}`);
+    if (!survivor) continue;
+    const ids = new Set<number>(survivor.coalescedRevisionIds ?? []);
+    for (const id of e.coalescedRevisionIds ?? []) ids.add(id);
+    ids.add(e.revisionId);
+    ids.delete(survivor.revisionId);
+    if (survivor.type === 'replacement' && survivor.insertionRevisionId != null) {
+      ids.delete(survivor.insertionRevisionId);
+    }
+    survivor.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
+  }
+  // Table-vs-inline preference:
+  //   - Empty inserted/deleted table (no typed cell content) → show the
+  //     `tableInserted`/`tableDeleted` card. There's no inline content
+  //     to anchor the change to, so the structural label is the only
+  //     thing the user can act on.
+  //   - Table WITH content (user typed in cells after insert) → show the
+  //     inline "Added 'X'" / "Replaced ..." card instead. The text is
+  //     more informative than the generic "Inserted table" label, and
+  //     one Accept on the inline card clears every site (cells share the
+  //     same revisionId via the cellMarker-inherits-id rule).
+  //
+  // `tableKeys` collects only EMPTY table-level entries; the dedup pass
+  // hides inline cards that share those keys. Non-empty table entries
+  // are themselves dropped so the user sees the inline card.
+  const emptyTableEntries = new Set<TrackedChangeEntry>();
+  const tableByKey = new Map<string, TrackedChangeEntry>();
+  for (const e of final) {
+    if (e.type !== 'tableInserted' && e.type !== 'tableDeleted') continue;
+    const key = `${e.author}|${e.date ?? ''}`;
+    const hasContent = e.text.trim().length > 0;
+    if (hasContent) {
+      // drop this entry so the inline card represents the change
+      continue;
+    }
+    emptyTableEntries.add(e);
+    if (!tableByKey.has(key)) tableByKey.set(key, e);
+  }
+  // Mirror the inline-survivor migration above: when a paragraph-mark entry
+  // is about to be hidden because it shares (author, date) with a surviving
+  // empty-table entry, fold its `revisionId` (+ its own coalesced ids) into
+  // the table's `coalescedRevisionIds`. Without this, accepting the table
+  // card would leave the orphaned pPrIns/pPrDel behind.
+  for (const e of final) {
+    if (e.type !== 'paragraphMarkInsertion' && e.type !== 'paragraphMarkDeletion') continue;
+    const survivor = tableByKey.get(`${e.author}|${e.date ?? ''}`);
+    if (!survivor) continue;
+    const ids = new Set<number>(survivor.coalescedRevisionIds ?? []);
+    for (const id of e.coalescedRevisionIds ?? []) ids.add(id);
+    ids.add(e.revisionId);
+    ids.delete(survivor.revisionId);
+    survivor.coalescedRevisionIds = ids.size > 0 ? [...ids] : undefined;
+  }
+  const deduped = final.filter((e) => {
+    const key = `${e.author}|${e.date ?? ''}`;
+    if (e.type === 'tableInserted' || e.type === 'tableDeleted') {
+      // Keep only the EMPTY-table entries (collected above); drop the
+      // rest so an inline card takes over.
+      return emptyTableEntries.has(e);
+    }
+    if (e.type === 'paragraphMarkInsertion' || e.type === 'paragraphMarkDeletion') {
+      return !inlineByKey.has(key) && !tableByKey.has(key);
+    }
+    if (e.type === 'insertion' || e.type === 'deletion' || e.type === 'replacement') {
+      return !tableByKey.has(key);
+    }
+    return true;
+  });
+  return { entries: deduped, commentToRevision };
 }

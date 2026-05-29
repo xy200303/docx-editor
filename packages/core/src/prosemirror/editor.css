@@ -684,3 +684,140 @@
 .paged-editor--hf-editing .layout-page-footer:hover {
   background-color: transparent;
 }
+
+/* =============================================================================
+ * Tracked structural revisions — painter + ProseMirror DOM cues
+ *
+ * Lives in core because both React and Vue painters/PM trees emit the same
+ * class set via toDOM and renderParagraph. Color palette matches the
+ * insertion/deletion mark colors (#2e7d32 green, #c62828 red) used by
+ * InsertionExtension / DeletionExtension.
+ * ============================================================================= */
+
+/* Paragraph mark — painter fragment (renderParagraph.ts) */
+.layout-revision-pmark {
+  position: relative;
+}
+.layout-revision-pmark::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+}
+.layout-revision-ins.layout-revision-pmark::before {
+  background-color: #2e7d32;
+}
+.layout-revision-del.layout-revision-pmark::before {
+  background-color: #c62828;
+}
+/* Pilcrow glyph — appended into the last line element by the painter so it
+   sits inline with the text instead of as a ::after pseudo on the fragment
+   (which would render as its own block row below the line). */
+.layout-revision-pmark-glyph {
+  display: inline;
+  margin-left: 2px;
+  font-weight: normal;
+  opacity: 0.75;
+  pointer-events: none;
+}
+.layout-revision-pmark-glyph.layout-revision-ins {
+  color: #2e7d32;
+}
+.layout-revision-pmark-glyph.layout-revision-del {
+  color: #c62828;
+  text-decoration: line-through;
+}
+
+/* Paragraph mark — hidden ProseMirror DOM (ParagraphExtension toDOM) */
+.ep-revision-pmark {
+  padding-left: 6px;
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.ep-revision-pmark.ep-revision-ins {
+  color: #2e7d32;
+}
+.ep-revision-pmark.ep-revision-del {
+  color: #c62828;
+}
+
+/* Tracked row — colored left margin bar. Hidden ProseMirror table uses
+   normal block flow so we paint on the per-cell child (one bar per row).
+   The painted layout uses absolutely-positioned cells inside a relative
+   `.layout-table-row`, so a single ::before pseudo on the row draws one
+   continuous bar on the left edge — much cleaner than stamping a bar on
+   every cell child. */
+.ep-revision-row {
+  position: relative;
+}
+.layout-table-row.ep-revision-row::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+}
+.layout-table-row.ep-revision-row.ep-revision-ins::before {
+  background-color: #2e7d32;
+}
+.layout-table-row.ep-revision-row.ep-revision-del::before {
+  background-color: #c62828;
+}
+
+/* Whole-table tracked insertion / deletion — one tall bar in the page
+   margin to the LEFT of the table. Matches the paragraph change-bar
+   visual (`.layout-revision-pmark::before`) so the user sees a
+   consistent margin indicator for any tracked block. The painter sets
+   `overflow: visible` on tracked tables so this pseudo can extend
+   beyond the table's own bounds into the page padding area. */
+.layout-table.ep-revision-table::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+}
+.layout-table.ep-revision-table.ep-revision-ins::before {
+  background-color: #2e7d32;
+}
+.layout-table.ep-revision-table.ep-revision-del::before {
+  background-color: #c62828;
+}
+/* Hidden PM DOM path — kept for the off-screen editing surface. */
+.ep-revision-row:not(.layout-table-row).ep-revision-ins > * {
+  box-shadow: inset 3px 0 0 #2e7d32;
+}
+.ep-revision-row:not(.layout-table-row).ep-revision-del > * {
+  box-shadow: inset 3px 0 0 #c62828;
+  text-decoration: line-through;
+  text-decoration-color: rgba(198, 40, 40, 0.6);
+}
+
+/* Tracked cell — colored top border + faint background tint */
+.ep-revision-cell.ep-revision-ins {
+  box-shadow: inset 0 3px 0 #2e7d32;
+  background-color: rgba(46, 125, 50, 0.05);
+}
+.ep-revision-cell.ep-revision-del {
+  box-shadow: inset 0 3px 0 #c62828;
+  background-color: rgba(198, 40, 40, 0.05);
+  text-decoration: line-through;
+  text-decoration-color: rgba(198, 40, 40, 0.6);
+}
+.ep-revision-cell.ep-revision-merge {
+  box-shadow: inset 0 3px 0 #5f6368;
+  background-color: rgba(95, 99, 104, 0.05);
+}
+
+/* Property-change paragraphs/blocks — quiet left margin bar in a neutral
+   color so the change is visible without being loud. */
+.ep-revision-prop-change {
+  box-shadow: inset 2px 0 0 #5f6368;
+  padding-left: 6px;
+}

@@ -268,6 +268,12 @@ function convertParagraphAttrs(
     }
   }
 
+  // Paragraph-mark tracked-change attrs — surface to the painter and to the
+  // measurement cache key so revised paragraphs paint their pilcrow / change
+  // bar and don't cross-pollute the cache with same-text-no-revision peers.
+  if (pmAttrs.pPrIns) attrs.pPrIns = pmAttrs.pPrIns;
+  if (pmAttrs.pPrDel) attrs.pPrDel = pmAttrs.pPrDel;
+
   return attrs;
 }
 
@@ -388,6 +394,13 @@ function convertTableCell(
     left: resolveSide(margins?.left, tableCellMargins?.left),
   };
 
+  // Surface tracked-cell marker (cellIns / cellDel / cellMerge) so the
+  // painter can color the cell border. Same model as ParagraphAttrs.pPrIns.
+  const cellMarker = attrs.cellMarker as
+    | import('../types/content/trackedChange').CellMarker
+    | null
+    | undefined;
+
   return {
     id: nextBlockId(),
     blocks,
@@ -401,6 +414,7 @@ function convertTableCell(
     borders: extractCellBorders(attrs as Record<string, unknown>, options.theme),
     padding,
     noWrap: (attrs.noWrap as boolean | undefined) || undefined,
+    trackedMarker: cellMarker ?? undefined,
   };
 }
 
@@ -430,6 +444,10 @@ function convertTableRow(
     height: attrs.height ? twipsToPixels(attrs.height as number) : undefined,
     heightRule: (attrs.heightRule as 'auto' | 'atLeast' | 'exact') ?? undefined,
     isHeader: attrs.isHeader as boolean | undefined,
+    trackedIns:
+      (attrs.trIns as import('../types/content/trackedChange').RevisionInfo | null) ?? undefined,
+    trackedDel:
+      (attrs.trDel as import('../types/content/trackedChange').RevisionInfo | null) ?? undefined,
   };
 }
 

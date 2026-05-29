@@ -13,7 +13,7 @@ import {
   selectAll,
   selectParentNode,
 } from 'prosemirror-commands';
-import type { Mark } from 'prosemirror-model';
+import type { Mark, Node as PMNode, Schema } from 'prosemirror-model';
 import { createExtension } from '../create';
 import { textFormattingToMarks } from '../marks/markUtils';
 import { Priority } from '../types';
@@ -91,7 +91,90 @@ const INHERITED_PARA_ATTRS = [
 ] as const;
 
 /** Mark types that represent style-inherited formatting (font, size, color). */
-const STYLE_MARK_NAMES = new Set(['fontFamily', 'fontSize', 'textColor']);
+export const STYLE_MARK_NAMES = new Set(['fontFamily', 'fontSize', 'textColor']);
+
+/**
+ * Apply post-split paragraph inheritance to `tr`. Assumes the split already
+ * happened and the caller's intent is that `tr.selection.$from` resolves
+ * into the NEW (second) paragraph. Copies style-related attrs from
+ * `sourcePara`, clears borders, and — for an empty new paragraph — syncs
+ * defaultTextFormatting and `setStoredMarks` so typed text inherits font /
+ * size / color from the source.
+ *
+ * Shared by the plain Enter handler and the suggesting-mode Enter handler.
+ */
+export function applyPostSplitInheritance(
+  tr: Transaction,
+  sourcePara: PMNode | null,
+  styleMarks: readonly Mark[],
+  schema: Schema
+): void {
+  const { $from } = tr.selection;
+  const newPara = $from.parent;
+  if (newPara.type.name !== 'paragraph') return;
+
+  const newAttrs: Record<string, unknown> = { ...newPara.attrs };
+  let attrsChanged = false;
+
+  if (sourcePara) {
+    for (const key of INHERITED_PARA_ATTRS) {
+      const srcVal = (sourcePara.attrs as Record<string, unknown>)[key];
+      if (srcVal != null && newAttrs[key] == null) {
+        newAttrs[key] = srcVal;
+        attrsChanged = true;
+      }
+    }
+  }
+
+  if (newAttrs.borders) {
+    newAttrs.borders = null;
+    attrsChanged = true;
+  }
+
+  if (attrsChanged) {
+    tr.setNodeMarkup($from.before(), undefined, newAttrs);
+  }
+
+  if (newPara.textContent.length !== 0) return;
+
+  let effectiveMarks: Mark[] = [...styleMarks];
+  if (effectiveMarks.length === 0 && sourcePara) {
+    const dtf = sourcePara.attrs.defaultTextFormatting as TextFormatting | undefined;
+    if (dtf) {
+      const allMarks = textFormattingToMarks(dtf, schema);
+      effectiveMarks = allMarks.filter((m) => STYLE_MARK_NAMES.has(m.type.name));
+    }
+  }
+  if (effectiveMarks.length === 0) return;
+
+  const dtf: TextFormatting = { ...((newAttrs.defaultTextFormatting as TextFormatting) ?? {}) };
+  let dtfChanged = false;
+  for (const m of effectiveMarks) {
+    if (m.type.name === 'fontSize' && (m.attrs.size as number) !== dtf.fontSize) {
+      dtf.fontSize = m.attrs.size as number;
+      dtfChanged = true;
+    }
+    if (m.type.name === 'fontFamily') {
+      const ascii = m.attrs.ascii as string | undefined;
+      if (ascii && (!dtf.fontFamily || dtf.fontFamily.ascii !== ascii)) {
+        dtf.fontFamily = mergeFontFamily(dtf.fontFamily, {
+          ascii,
+          hAnsi: m.attrs.hAnsi as string | undefined,
+        }) as TextFormatting['fontFamily'];
+        dtfChanged = true;
+      }
+    }
+  }
+  if (dtfChanged) {
+    tr.setNodeMarkup($from.before(), undefined, {
+      ...newAttrs,
+      defaultTextFormatting: dtf,
+    });
+  }
+
+  // setStoredMarks MUST come after setNodeMarkup — ReplaceStep clears stored marks.
+  tr.setStoredMarks(effectiveMarks);
+}
 
 const splitBlockClearBorders: Command = (state, dispatch, view) => {
   // Capture source paragraph info BEFORE split (splitBlock resets everything)
@@ -118,93 +201,8 @@ const splitBlockClearBorders: Command = (state, dispatch, view) => {
   }
 
   if (dispatch && splitTr !== null) {
-    // After split, cursor is in the new (second) paragraph.
-    // Apply attr inheritance, border clearing, and stored marks to the SAME transaction.
     const tr = splitTr as Transaction;
-    const { $from } = tr.selection;
-    const newPara = $from.parent;
-
-    if (newPara.type.name === 'paragraph') {
-      const newAttrs = { ...newPara.attrs };
-      let attrsChanged = false;
-
-      // Copy inherited attrs from source paragraph
-      if (sourcePara) {
-        for (const key of INHERITED_PARA_ATTRS) {
-          const srcVal = sourcePara.attrs[key];
-          if (srcVal != null && newAttrs[key] == null) {
-            newAttrs[key] = srcVal;
-            attrsChanged = true;
-          }
-        }
-      }
-
-      // Clear borders (Word does not propagate paragraph borders on Enter)
-      if (newAttrs.borders) {
-        newAttrs.borders = null;
-        attrsChanged = true;
-      }
-
-      if (attrsChanged) {
-        tr.setNodeMarkup($from.before(), undefined, newAttrs);
-      }
-
-      // For empty paragraphs (Enter at end of line), set stored marks so typed text
-      // inherits font family, font size, and text color. We skip bold/italic/etc —
-      // Word doesn't carry direct formatting to new paragraphs.
-      if (newPara.textContent.length === 0) {
-        // Determine effective style marks. When text has explicit marks (e.g. user
-        // applied a font override), use those. When text inherits formatting from
-        // the paragraph style chain (no explicit marks), derive marks from the
-        // source paragraph's defaultTextFormatting.
-        let effectiveMarks: Mark[] = styleMarks;
-
-        if (effectiveMarks.length === 0 && sourcePara) {
-          const dtf = sourcePara.attrs.defaultTextFormatting as TextFormatting | undefined;
-          if (dtf) {
-            const allMarks = textFormattingToMarks(dtf, state.schema);
-            effectiveMarks = allMarks.filter((m) => STYLE_MARK_NAMES.has(m.type.name));
-          }
-        }
-
-        if (effectiveMarks.length > 0) {
-          // Sync defaultTextFormatting with the actual cursor marks so the empty
-          // paragraph measurement (used for caret height) matches the stored marks.
-          const dtf = { ...(newAttrs.defaultTextFormatting ?? {}) };
-          let dtfChanged = false;
-          for (const m of effectiveMarks) {
-            if (m.type.name === 'fontSize' && m.attrs.size !== dtf.fontSize) {
-              dtf.fontSize = m.attrs.size;
-              dtfChanged = true;
-            }
-            if (m.type.name === 'fontFamily') {
-              const ascii = m.attrs.ascii as string | undefined;
-              if (ascii && (!dtf.fontFamily || dtf.fontFamily.ascii !== ascii)) {
-                // Pair-aware merge so a stale asciiTheme (e.g. minorHAnsi from
-                // docDefaults) doesn't silently win over the user's explicit
-                // ascii — see fontFamilyMerge for the OOXML rule.
-                dtf.fontFamily = mergeFontFamily(dtf.fontFamily, {
-                  ascii,
-                  hAnsi: m.attrs.hAnsi as string | undefined,
-                }) as TextFormatting['fontFamily'];
-                dtfChanged = true;
-              }
-            }
-          }
-          if (dtfChanged) {
-            tr.setNodeMarkup($from.before(), undefined, {
-              ...newAttrs,
-              defaultTextFormatting: dtf,
-            });
-          }
-
-          // IMPORTANT: setStoredMarks MUST be called AFTER all setNodeMarkup calls.
-          // setNodeMarkup adds a ReplaceStep which clears storedMarks on the transaction.
-          tr.setStoredMarks(effectiveMarks);
-        }
-      }
-    }
-
+    applyPostSplitInheritance(tr, sourcePara, styleMarks, state.schema);
     dispatch(tr.scrollIntoView());
   }
 

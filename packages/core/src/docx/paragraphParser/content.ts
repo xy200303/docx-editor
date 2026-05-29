@@ -348,9 +348,11 @@ function parseTrackedChangeInfo(node: XmlElement): TrackedChangeInfo {
 }
 
 function parsePropertyChangeInfo(node: XmlElement): ParagraphPropertyChange['info'] {
-  const base = parseTrackedChangeInfo(node);
-  const rsid = (getAttribute(node, 'w', 'rsid') ?? '').trim();
-  return rsid.length > 0 ? { ...base, rsid } : base;
+  // `CT_PPrChange` extends `CT_TrackChange` (wml.xsd:803,920); the schema does
+  // NOT add a `w:rsid` attribute group. Earlier code parsed and round-tripped
+  // it, but emitting it on `<w:pPrChange>` is schema-invalid. Drop on parse so
+  // a round-trip can never re-emit it.
+  return parseTrackedChangeInfo(node);
 }
 
 export function parseParagraphPropertyChanges(

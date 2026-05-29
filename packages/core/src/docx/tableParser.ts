@@ -288,9 +288,14 @@ function parseTableCellStructuralChange(
 
   const merge = findChild(tcPrElement, 'w', 'cellMerge');
   if (merge) {
+    const vMergeRaw = getAttribute(merge, 'w', 'vMerge');
+    const vMergeOrigRaw = getAttribute(merge, 'w', 'vMergeOrig');
+    const isValid = (v: string | null): v is 'rest' | 'cont' => v === 'rest' || v === 'cont';
     return {
       type: 'tableCellMerge',
       info: parseTrackedChangeInfo(merge),
+      ...(isValid(vMergeRaw) ? { vMerge: vMergeRaw } : {}),
+      ...(isValid(vMergeOrigRaw) ? { vMergeOrig: vMergeOrigRaw } : {}),
     };
   }
 

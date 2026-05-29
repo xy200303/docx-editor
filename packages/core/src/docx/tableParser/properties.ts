@@ -77,9 +77,12 @@ export function parseTrackedChangeInfo(node: XmlElement): TableStructuralChangeI
 export function parsePropertyChangeInfo(
   node: XmlElement
 ): TablePropertyChange['info'] | TableRowPropertyChange['info'] | TableCellPropertyChange['info'] {
-  const base = parseTrackedChangeInfo(node);
-  const rsid = (getAttribute(node, 'w', 'rsid') ?? '').trim();
-  return rsid.length > 0 ? { ...base, rsid } : base;
+  // CT_TblPrChange / CT_TrPrChange / CT_TcPrChange all extend CT_TrackChange
+  // (wml.xsd:803) which has no `w:rsid` attribute. Earlier code parsed it
+  // into the in-memory model, but it was never schema-valid on the wire and
+  // is now dropped at both serializer paths (paragraphSerializer.ts,
+  // tableSerializer.ts, runSerializer.ts). Stop parsing for consistency.
+  return parseTrackedChangeInfo(node);
 }
 
 // ============================================================================

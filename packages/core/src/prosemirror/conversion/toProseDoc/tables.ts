@@ -244,6 +244,10 @@ export function convertTable(
     look: table.formatting?.look,
     _originalFormatting: table.formatting || undefined,
   };
+  // Table-property change history (`<w:tblPrChange>`).
+  if (table.propertyChanges && table.propertyChanges.length > 0) {
+    attrs.tblPrChange = table.propertyChanges;
+  }
 
   const conditionalStyles = {
     wholeTable: resolveTableStyleConditional(styleResolver, tableStyleId, 'wholeTable'),
@@ -357,6 +361,23 @@ function convertTableRow(
     isHeader: !!row.formatting?.header,
     _originalFormatting: row.formatting || undefined,
   };
+  // Tracked row structural change — pull `trIns` / `trDel` from the model's
+  // `structuralChange` field (parsed earlier from `<w:trPr><w:ins/>` /
+  // `<w:del/>`). See ECMA-376 §17.13.5.
+  if (row.structuralChange) {
+    const sc = row.structuralChange;
+    const info = {
+      revisionId: sc.info.id,
+      author: sc.info.author,
+      date: sc.info.date ?? null,
+    };
+    if (sc.type === 'tableRowInsertion') attrs.trIns = info;
+    else if (sc.type === 'tableRowDeletion') attrs.trDel = info;
+  }
+  // Row property change history (`<w:trPrChange>`).
+  if (row.propertyChanges && row.propertyChanges.length > 0) {
+    attrs.trPrChange = row.propertyChanges;
+  }
 
   const numCells = row.cells.length;
   const isFirstRow = rowIndex === 0;
@@ -685,6 +706,43 @@ function convertTableCell(
     _originalFormatting: formatting || undefined,
     _originalResolvedFill: backgroundColor,
   };
+
+  // Tracked cell structural marker (cellIns / cellDel / cellMerge). Pulled
+  // from the model's `structuralChange` (set by tableParser from
+  // `<w:tcPr>/<w:cellIns>` etc.). NOTE: `<w:cellMerge>` carries `vMerge`
+  // and `vMergeOrig`, NOT `w:val` (wml.xsd CT_CellMergeTrackChange) — but
+  // the current model only stores info, so vMerge value isn't yet
+  // preserved on the model side. Plumb id/author/date for now; vMerge
+  // round-trip will need a model extension.
+  if (cell.structuralChange) {
+    const sc = cell.structuralChange;
+    const info = {
+      revisionId: sc.info.id,
+      author: sc.info.author,
+      date: sc.info.date ?? null,
+    };
+    if (sc.type === 'tableCellInsertion') {
+      attrs.cellMarker = { kind: 'ins', info };
+    } else if (sc.type === 'tableCellDeletion') {
+      attrs.cellMarker = { kind: 'del', info };
+    } else if (sc.type === 'tableCellMerge') {
+      // Preserve the source `w:vMerge` / `w:vMergeOrig` value when present
+      // (parser reads them off `<w:cellMerge>`). If missing (e.g. legacy
+      // model with no vMerge), default to `"cont"` — matches Word's most
+      // common tracked-merge case ("this cell got merged INTO the one
+      // above"), per ECMA-376 §17.13.5.6.
+      attrs.cellMarker = {
+        kind: 'merge',
+        info,
+        vMerge: sc.vMerge ?? 'cont',
+        ...(sc.vMergeOrig ? { vMergeOrig: sc.vMergeOrig } : {}),
+      };
+    }
+  }
+  // Cell-property change history.
+  if (cell.propertyChanges && cell.propertyChanges.length > 0) {
+    attrs.tcPrChange = cell.propertyChanges;
+  }
 
   // Convert cell content (paragraphs and nested tables)
   const contentNodes: PMNode[] = [];

@@ -20,6 +20,7 @@ import type {
   TableCellFormatting,
   SectionProperties,
 } from '../../types/document';
+import type { RevisionInfo } from '../../types/content/trackedChange';
 import type { FloatingTableProperties, TableLook } from '../../types';
 import type { WrapType } from '../../docx/wrapTypes';
 
@@ -133,6 +134,33 @@ export interface ParagraphAttrs {
   /** Full section properties for paragraphs that end a section.
    *  Used by layout engine for per-section column/page config and round-trip. */
   _sectionProperties?: SectionProperties;
+
+  /**
+   * Paragraph-mark insertion tracking (`<w:pPr><w:rPr><w:ins/>`). Carries
+   * the OOXML tracked-change triple `(w:id, w:author, w:date)` when the
+   * pilcrow terminating this paragraph was added as a tracked change.
+   * `date` is ISO 8601 UTC with `Z` suffix; `null` if the source DOCX
+   * omitted `w:date`. Reject joins this paragraph with the following one.
+   */
+  pPrIns?: RevisionInfo | null;
+
+  /**
+   * Paragraph-mark deletion tracking (`<w:pPr><w:rPr><w:del/>`). Same
+   * shape and provenance as `pPrIns`. Accept joins this paragraph with
+   * the following one; reject clears the marker, keeping the split.
+   */
+  pPrDel?: RevisionInfo | null;
+
+  /**
+   * Paragraph property changes (`<w:pPrChange>`). Each entry carries
+   * the OOXML triple plus a `prior` snapshot of the paragraph properties
+   * before the edit. Array because multiple authors can stack edits on
+   * the same paragraph; on reject by id, only the matching entry's prior
+   * is restored. The shape mirrors the existing model
+   * `Paragraph.propertyChanges: ParagraphPropertyChange[]` — see
+   * `packages/core/src/types/content/trackedChange.ts`.
+   */
+  pPrChange?: import('../../types/document').ParagraphPropertyChange[] | null;
 }
 
 /**
@@ -241,6 +269,13 @@ export interface TableAttrs {
   look?: TableLook;
   /** Original table formatting from DOCX for lossless round-trip serialization */
   _originalFormatting?: TableFormatting;
+  /**
+   * Table-property change history (`<w:tblPrChange>`). Same shape as the
+   * model `Table.propertyChanges`. OOXML allows at most one entry per table
+   * on disk (CT_TblPr maxOccurs="1"); the model/array allows in-memory
+   * stacking, serializer clamps to the first.
+   */
+  tblPrChange?: import('../../types/document').TablePropertyChange[] | null;
 }
 
 /**
@@ -255,6 +290,15 @@ export interface TableRowAttrs {
   isHeader?: boolean;
   /** Original row formatting from DOCX for lossless round-trip serialization */
   _originalFormatting?: TableRowFormatting;
+  /**
+   * Row-mark insertion / deletion (`<w:trPr><w:ins/>` / `<w:del/>`).
+   * Authored by inserting/deleting a row in suggesting mode. The row stays
+   * present until accept (for delete) or reject (for insert).
+   */
+  trIns?: RevisionInfo | null;
+  trDel?: RevisionInfo | null;
+  /** Row-property change history (`<w:trPrChange>`). */
+  trPrChange?: import('../../types/document').TableRowPropertyChange[] | null;
 }
 
 /**
@@ -292,4 +336,24 @@ export interface TableCellAttrs {
    * tint/shade); if they did, we write plain rgb.
    */
   _originalResolvedFill?: string;
+  /**
+   * Cell structural revision marker. Mutually exclusive per
+   * `EG_CellMarkupElements` (wml.xsd) — a cell can carry at most one of
+   * `cellIns`, `cellDel`, or `cellMerge`. `merge` is VERTICAL only
+   * (`<w:cellMerge w:vMerge="rest|cont"/>`); horizontal merge is
+   * conveyed via `cellIns` on the merging cell and `cellDel` on absorbed
+   * cells (Word's on-disk convention).
+   */
+  cellMarker?:
+    | { kind: 'ins'; info: RevisionInfo }
+    | { kind: 'del'; info: RevisionInfo }
+    | {
+        kind: 'merge';
+        info: RevisionInfo;
+        vMerge: 'rest' | 'cont';
+        vMergeOrig?: 'rest' | 'cont';
+      }
+    | null;
+  /** Cell-property change history (`<w:tcPrChange>`). */
+  tcPrChange?: import('../../types/document').TableCellPropertyChange[] | null;
 }

@@ -23,3 +23,5 @@ export {
   setSuggestionMode,
   isSuggestionModeActive,
 } from './suggestionMode';
+export { makeRevisionInfo } from './revisionIds';
+export type { RevisionInfo } from '../../types/content/trackedChange';

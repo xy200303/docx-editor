@@ -109,7 +109,8 @@ export function convertParagraph(
         content,
         'deletion',
         mergedStyleRunFormatting,
-        styleResolver
+        styleResolver,
+        true
       );
       if (commentIds.size > 0) {
         moveFromNodes = applyCommentMarks(moveFromNodes, commentIds);
@@ -120,7 +121,8 @@ export function convertParagraph(
         content,
         'insertion',
         mergedStyleRunFormatting,
-        styleResolver
+        styleResolver,
+        true
       );
       if (commentIds.size > 0) {
         moveToNodes = applyCommentMarks(moveToNodes, commentIds);
@@ -169,7 +171,8 @@ function convertTrackedChange(
   change: Insertion | Deletion | MoveFrom | MoveTo,
   markType: 'insertion' | 'deletion',
   styleRunFormatting?: TextFormatting,
-  styleResolver?: StyleResolver | null
+  styleResolver?: StyleResolver | null,
+  isMovePair = false
 ): PMNode[] {
   const nodes: PMNode[] = [];
   for (const item of change.content) {
@@ -184,6 +187,7 @@ function convertTrackedChange(
     revisionId: change.info.id,
     author: change.info.author,
     date: change.info.date ?? null,
+    isMovePair,
   });
 
   return nodes.map((node) => {
@@ -326,6 +330,28 @@ function paragraphFormattingToAttrs(
   }
   if (paragraph.renderedPageBreakBefore) {
     attrs.renderedPageBreakBefore = true;
+  }
+
+  // Paragraph-mark tracked-change attrs (w:pPr/w:rPr/w:ins, w:del).
+  if (paragraph.pPrIns) {
+    attrs.pPrIns = {
+      revisionId: paragraph.pPrIns.id,
+      author: paragraph.pPrIns.author,
+      date: paragraph.pPrIns.date ?? null,
+    };
+  }
+  if (paragraph.pPrDel) {
+    attrs.pPrDel = {
+      revisionId: paragraph.pPrDel.id,
+      author: paragraph.pPrDel.author,
+      date: paragraph.pPrDel.date ?? null,
+    };
+  }
+
+  // Paragraph-property change history (w:pPrChange). Passed through as the
+  // model array; serializer reads it back via fromProseDoc.
+  if (paragraph.propertyChanges && paragraph.propertyChanges.length > 0) {
+    attrs.pPrChange = paragraph.propertyChanges;
   }
 
   return attrs;

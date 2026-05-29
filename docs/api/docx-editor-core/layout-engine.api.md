@@ -508,6 +508,8 @@ export type ParagraphAttrs = {
     defaultFontSize?: number;
     defaultFontFamily?: string;
     suppressEmptyParagraphHeight?: boolean;
+    pPrIns?: RevisionInfo | null;
+    pPrDel?: RevisionInfo | null;
 };
 
 // @public
@@ -704,6 +706,7 @@ export type TableCell = {
         left: number;
     };
     noWrap?: boolean;
+    trackedMarker?: CellMarker;
 };
 
 // @public
@@ -743,6 +746,8 @@ export type TableRow = {
     height?: number;
     heightRule?: 'auto' | 'atLeast' | 'exact';
     isHeader?: boolean;
+    trackedIns?: RevisionInfo;
+    trackedDel?: RevisionInfo;
 };
 
 // @public

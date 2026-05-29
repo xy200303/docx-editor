@@ -118,7 +118,7 @@ export type { TableContextInfo, BorderPreset } from './table';
 export { insertPageBreak } from './pageBreak';
 
 // Image commands
-export { setImageWrapType } from './image';
+export { setImageWrapType, insertImageNode } from './image';
 export type { AnchorWrapType, ImageLayoutTarget, SetImageWrapTypeOptions } from './image';
 
 // Table of Contents
@@ -130,6 +130,8 @@ export {
   removeCommentMark,
   acceptChange,
   rejectChange,
+  acceptChangeById,
+  rejectChangeById,
   acceptAllChanges,
   rejectAllChanges,
   findNextChange,

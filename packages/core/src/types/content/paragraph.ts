@@ -21,6 +21,7 @@ import type {
   MoveToRangeStart,
   MoveToRangeEnd,
   ParagraphPropertyChange,
+  TrackedChangeInfo,
 } from './trackedChange';
 import type { MathEquation } from './math';
 import type { SectionProperties } from './section';
@@ -73,6 +74,20 @@ export interface Paragraph {
   formatting?: ParagraphFormatting;
   /** Paragraph-level tracked property changes (w:pPrChange) */
   propertyChanges?: ParagraphPropertyChange[];
+  /**
+   * Paragraph-mark insertion tracking (`<w:pPr><w:rPr><w:ins/>`). Set when
+   * this paragraph's terminating pilcrow was added as a tracked change —
+   * e.g., the user pressed Enter mid-paragraph in suggesting mode. Reject
+   * joins this paragraph with the following one.
+   */
+  pPrIns?: TrackedChangeInfo;
+  /**
+   * Paragraph-mark deletion tracking (`<w:pPr><w:rPr><w:del/>`). Set when
+   * this paragraph's terminating pilcrow was deleted as a tracked change —
+   * e.g., the user pressed Backspace at the start of the next paragraph in
+   * suggesting mode. Accept joins this paragraph with the following one.
+   */
+  pPrDel?: TrackedChangeInfo;
   /** Paragraph content */
   content: ParagraphContent[];
   /** Computed list rendering (if this is a list item) */

@@ -21,7 +21,6 @@ import type {
   Paragraph,
 } from '../../../types/document';
 import type { TableAttrs, TableRowAttrs, TableCellAttrs } from '../../schema/nodes';
-import type { TrackedChangeCounts } from './marks';
 import { convertPMParagraph } from './paragraph';
 
 function inferTableBorders(rows: TableRow[]): TableBorders | undefined {
@@ -59,10 +58,7 @@ interface PMTableCellAnchor {
   cell: TableCell;
 }
 
-function collectPMTableAnchors(
-  node: PMNode,
-  documentCounts?: TrackedChangeCounts
-): {
+function collectPMTableAnchors(node: PMNode): {
   anchors: PMTableCellAnchor[];
   totalCols: number;
 } {
@@ -87,7 +83,7 @@ function collectPMTableAnchors(
         col: colIndex,
         rowspan,
         colspan,
-        cell: convertPMTableCell(cellNode, documentCounts),
+        cell: convertPMTableCell(cellNode),
       });
 
       for (let r = rowIndex; r < rowIndex + rowspan; r++) {
@@ -106,9 +102,9 @@ function collectPMTableAnchors(
   return { anchors, totalCols };
 }
 
-export function convertPMTable(node: PMNode, documentCounts?: TrackedChangeCounts): Table {
+export function convertPMTable(node: PMNode): Table {
   const attrs = node.attrs as TableAttrs;
-  const { anchors, totalCols } = collectPMTableAnchors(node, documentCounts);
+  const { anchors, totalCols } = collectPMTableAnchors(node);
   const anchorByStart = new Map<string, PMTableCellAnchor>();
   const anchorByCoveredSlot = new Map<string, PMTableCellAnchor>();
 
@@ -170,11 +166,36 @@ export function convertPMTable(node: PMNode, documentCounts?: TrackedChangeCount
       colIndex += coveringAnchor.colspan;
     }
 
-    rows.push({
+    const rowAttrs = rowNode.attrs as TableRowAttrs;
+    const tr: TableRow = {
       type: 'tableRow',
-      formatting: tableRowAttrsToFormatting(rowNode.attrs as TableRowAttrs),
+      formatting: tableRowAttrsToFormatting(rowAttrs),
       cells,
-    });
+    };
+    // Round-trip row-level structural revisions (`<w:trPr><w:ins/>` etc).
+    if (rowAttrs.trIns) {
+      tr.structuralChange = {
+        type: 'tableRowInsertion',
+        info: {
+          id: rowAttrs.trIns.revisionId,
+          author: rowAttrs.trIns.author,
+          ...(rowAttrs.trIns.date ? { date: rowAttrs.trIns.date } : {}),
+        },
+      };
+    } else if (rowAttrs.trDel) {
+      tr.structuralChange = {
+        type: 'tableRowDeletion',
+        info: {
+          id: rowAttrs.trDel.revisionId,
+          author: rowAttrs.trDel.author,
+          ...(rowAttrs.trDel.date ? { date: rowAttrs.trDel.date } : {}),
+        },
+      };
+    }
+    if (rowAttrs.trPrChange && rowAttrs.trPrChange.length > 0) {
+      tr.propertyChanges = rowAttrs.trPrChange;
+    }
+    rows.push(tr);
   }
 
   const formatting = tableAttrsToFormatting(attrs) || undefined;
@@ -196,12 +217,16 @@ export function convertPMTable(node: PMNode, documentCounts?: TrackedChangeCount
     }
   }
 
-  return {
+  const result: Table = {
     type: 'table',
     columnWidths: attrs.columnWidths || undefined,
     formatting,
     rows,
   };
+  if (attrs.tblPrChange && attrs.tblPrChange.length > 0) {
+    result.propertyChanges = attrs.tblPrChange;
+  }
+  return result;
 }
 
 /**
@@ -369,24 +394,48 @@ function tableRowAttrsToFormatting(attrs: TableRowAttrs): TableRowFormatting | u
 /**
  * Convert a ProseMirror table cell node to our TableCell type
  */
-function convertPMTableCell(node: PMNode, documentCounts?: TrackedChangeCounts): TableCell {
+function convertPMTableCell(node: PMNode): TableCell {
   const attrs = node.attrs as TableCellAttrs;
   const content: (Paragraph | Table)[] = [];
 
   // Extract cell content (paragraphs and nested tables)
   node.forEach((contentNode) => {
     if (contentNode.type.name === 'paragraph') {
-      content.push(convertPMParagraph(contentNode, documentCounts));
+      content.push(convertPMParagraph(contentNode));
     } else if (contentNode.type.name === 'table') {
-      content.push(convertPMTable(contentNode, documentCounts));
+      content.push(convertPMTable(contentNode));
     }
   });
 
-  return {
+  const cell: TableCell = {
     type: 'tableCell',
     formatting: tableCellAttrsToFormatting(attrs),
     content,
   };
+  // Round-trip cell-level structural revisions (`<w:cellIns>`/`<w:cellDel>`
+  // /`<w:cellMerge>`).
+  if (attrs.cellMarker) {
+    const m = attrs.cellMarker;
+    const info = {
+      id: m.info.revisionId,
+      author: m.info.author,
+      ...(m.info.date ? { date: m.info.date } : {}),
+    };
+    if (m.kind === 'ins') cell.structuralChange = { type: 'tableCellInsertion', info };
+    else if (m.kind === 'del') cell.structuralChange = { type: 'tableCellDeletion', info };
+    else {
+      cell.structuralChange = {
+        type: 'tableCellMerge',
+        info,
+        ...(m.vMerge ? { vMerge: m.vMerge } : {}),
+        ...(m.vMergeOrig ? { vMergeOrig: m.vMergeOrig } : {}),
+      };
+    }
+  }
+  if (attrs.tcPrChange && attrs.tcPrChange.length > 0) {
+    cell.propertyChanges = attrs.tcPrChange;
+  }
+  return cell;
 }
 
 /**

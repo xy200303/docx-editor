@@ -308,6 +308,12 @@ export function hashParagraphBlock(block: ParagraphBlock): string {
     }
     // Same for the trailing-empty-paragraph-after-table zero-height flag.
     if (attrs.suppressEmptyParagraphHeight) parts.push('sup');
+    // Paragraph-mark revision presence affects painted output (pilcrow ::after
+    // glyph, margin change bar via box-shadow). Two paragraphs with identical
+    // text and runs but different revision state must NOT share a measurement
+    // cache entry, or the second-painted doc inherits the first's pilcrow.
+    if (attrs.pPrIns) parts.push(`pins:${attrs.pPrIns.revisionId}`);
+    if (attrs.pPrDel) parts.push(`pdel:${attrs.pPrDel.revisionId}`);
   }
 
   return parts.join('||');

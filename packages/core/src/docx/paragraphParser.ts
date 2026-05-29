@@ -15,7 +15,14 @@
  * predicates/text extraction in ./utilities.ts.
  */
 
-import type { Paragraph, Theme, RelationshipMap, MediaFile, NumberFormat } from '../types/document';
+import type {
+  Paragraph,
+  Theme,
+  RelationshipMap,
+  MediaFile,
+  NumberFormat,
+  TrackedChangeInfo,
+} from '../types/document';
 import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
 import { findChild, getAttribute, type XmlElement } from './xmlParser';
@@ -39,6 +46,24 @@ export {
   hasStyle,
   getTemplateVariable,
 } from './paragraphParser/queries';
+
+/**
+ * Parse the OOXML tracked-change attribute triple `(w:id, w:author, w:date)`
+ * from any element that extends `CT_TrackChange` (e.g. `<w:ins>`, `<w:del>`,
+ * `<w:moveFrom>`). `w:id` is required (`xsd:int`); a missing or non-numeric
+ * id returns `null`. `w:date` is optional per schema — passed through as-is.
+ */
+function parseTrackedChangeAttrs(el: XmlElement): TrackedChangeInfo | null {
+  const idAttr = getAttribute(el, 'w', 'id');
+  if (idAttr == null) return null;
+  const id = parseInt(idAttr, 10);
+  if (Number.isNaN(id)) return null;
+  const author = getAttribute(el, 'w', 'author') ?? '';
+  const date = getAttribute(el, 'w', 'date') ?? undefined;
+  const info: TrackedChangeInfo = { id, author };
+  if (date) info.date = date;
+  return info;
+}
 
 /**
  * Parse a paragraph element (w:p)
@@ -94,6 +119,24 @@ export function parseParagraph(
       styles,
       paragraph.formatting
     );
+
+    // Paragraph-mark tracked-change markers live inside w:pPr/w:rPr per
+    // ECMA-376 §17.13.5 (EG_ParaRPrTrackChanges). They mean "the pilcrow
+    // that terminates this paragraph was inserted/deleted as a tracked
+    // change," NOT that any run content is tracked.
+    const pPrRPr = findChild(pPr, 'w', 'rPr');
+    if (pPrRPr) {
+      const ins = findChild(pPrRPr, 'w', 'ins');
+      if (ins) {
+        const info = parseTrackedChangeAttrs(ins);
+        if (info) paragraph.pPrIns = info;
+      }
+      const del = findChild(pPrRPr, 'w', 'del');
+      if (del) {
+        const info = parseTrackedChangeAttrs(del);
+        if (info) paragraph.pPrDel = info;
+      }
+    }
 
     // Check for section properties within paragraph (marks end of a section)
     const sectPr = findChild(pPr, 'w', 'sectPr');

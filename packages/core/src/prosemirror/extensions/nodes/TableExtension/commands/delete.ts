@@ -11,6 +11,7 @@
 import { type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { CellSelection } from 'prosemirror-tables';
 import { getTableContext } from '../context';
+import { makeRevisionInfo } from '../../../../plugins/revisionIds';
 
 export const deleteRow: Command = (
   state: EditorState,
@@ -32,13 +33,38 @@ export const deleteRow: Command = (
     for (let i = 0; i < context.rowIndex; i++) {
       rowStart += context.table.child(i).nodeSize;
     }
-    const rowEnd = rowStart + context.table.child(context.rowIndex).nodeSize;
-    tr.delete(rowStart, rowEnd);
+    const rowNode = context.table.child(context.rowIndex);
+
+    const info = makeRevisionInfo(state);
+    if (info) {
+      // Suggesting mode: don't actually delete the row — mark it with
+      // `trDel` and mirror `cellMarker: { kind: 'del' }` onto every cell.
+      // The row stays visible until accept; reject clears the marker.
+      tr.setNodeMarkup(rowStart, undefined, { ...rowNode.attrs, trDel: info });
+      let cellPos = rowStart + 1;
+      rowNode.forEach((cell) => {
+        if (cell.type.name === 'tableCell' || cell.type.name === 'tableHeader') {
+          tr.setNodeMarkup(cellPos, undefined, {
+            ...cell.attrs,
+            cellMarker: { kind: 'del', info },
+          });
+        }
+        cellPos += cell.nodeSize;
+      });
+    } else {
+      const rowEnd = rowStart + rowNode.nodeSize;
+      tr.delete(rowStart, rowEnd);
+    }
     dispatch(tr.scrollIntoView());
   }
   return true;
 };
 
+// TODO(Phase 2c): when suggesting mode is active, set `cellMarker: { kind:
+// 'del', info }` on each cell in the column rather than removing them, so
+// the column stays visible until accept. See
+// `tracked-structural-tables/spec.md` — "Track column insertion and
+// deletion in suggesting mode."
 export const deleteColumn: Command = (
   state: EditorState,
   dispatch?: (tr: Transaction) => void

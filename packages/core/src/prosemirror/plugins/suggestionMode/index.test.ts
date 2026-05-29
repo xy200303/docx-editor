@@ -5,7 +5,7 @@
 import { describe, test, expect } from 'bun:test';
 import { Schema } from 'prosemirror-model';
 import { EditorState, TextSelection, type Transaction } from 'prosemirror-state';
-import { createSuggestionModePlugin, suggestionModeKey, setSuggestionMode } from './suggestionMode';
+import { createSuggestionModePlugin, suggestionModeKey, setSuggestionMode } from './index';
 
 // Minimal schema with insertion/deletion marks
 const schema = new Schema({

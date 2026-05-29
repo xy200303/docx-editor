@@ -56,17 +56,19 @@ function normalizeTrackedChangeInfo(info: { id: number; author: string; date?: s
   };
 }
 
-function serializeTrackedChangeAttributes(
-  info: { id: number; author: string; date?: string },
-  rsid?: string
-): string {
+function serializeTrackedChangeAttributes(info: {
+  id: number;
+  author: string;
+  date?: string;
+}): string {
+  // NOTE: `w:rsid` is NOT an attribute of `CT_TrackChange` (wml.xsd:803).
+  // Some earlier code emitted it on `<w:trPrChange>` / `<w:tcPrChange>`;
+  // that is schema-invalid. Strict OOXML readers (and Word's own validator)
+  // reject the unknown attribute. Always omit.
   const normalized = normalizeTrackedChangeInfo(info);
   const attrs = [`w:id="${normalized.id}"`, `w:author="${escapeXml(normalized.author)}"`];
   if (normalized.date) {
     attrs.push(`w:date="${escapeXml(normalized.date)}"`);
-  }
-  if (rsid && rsid.trim().length > 0) {
-    attrs.push(`w:rsid="${escapeXml(rsid.trim())}"`);
   }
   return attrs.join(' ');
 }
@@ -456,8 +458,10 @@ export function serializeTableFormatting(
     }
   }
 
+  // OOXML allows at most one `<w:tblPrChange>` per `<w:tblPr>` (CT_TblPr
+  // maxOccurs="1"). Model array can carry multiple in-memory; emit one.
   if (propertyChanges && propertyChanges.length > 0) {
-    parts.push(...propertyChanges.map((change) => serializeTablePropertyChange(change)));
+    parts.push(serializeTablePropertyChange(propertyChanges[0]));
   }
 
   if (parts.length === 0) return '';
@@ -473,7 +477,7 @@ function extractTblPrInner(tblPrXml: string): string {
 }
 
 function serializeTablePropertyChange(change: TablePropertyChange): string {
-  const attrs = serializeTrackedChangeAttributes(change.info, change.info.rsid);
+  const attrs = serializeTrackedChangeAttributes(change.info);
   const previousTblPrXml = serializeTableFormatting(change.previousFormatting) || '<w:tblPr/>';
   const previousTblPrInner = extractTblPrInner(previousTblPrXml);
   const normalizedPreviousTblPr =
@@ -537,8 +541,11 @@ export function serializeTableRowFormatting(
     }
   }
 
+  // OOXML allows at most one `<w:trPrChange>` per `<w:trPr>` (CT_TrPr
+  // maxOccurs="1"). The model array can carry multiple in-memory; emit only
+  // the first to stay schema-valid.
   if (propertyChanges && propertyChanges.length > 0) {
-    parts.push(...propertyChanges.map((change) => serializeTableRowPropertyChange(change)));
+    parts.push(serializeTableRowPropertyChange(propertyChanges[0]));
   }
 
   if (parts.length === 0) return '';
@@ -554,7 +561,7 @@ function extractTrPrInner(trPrXml: string): string {
 }
 
 function serializeTableRowPropertyChange(change: TableRowPropertyChange): string {
-  const attrs = serializeTrackedChangeAttributes(change.info, change.info.rsid);
+  const attrs = serializeTrackedChangeAttributes(change.info);
   const previousTrPrXml = serializeTableRowFormatting(change.previousFormatting) || '<w:trPr/>';
   const previousTrPrInner = extractTrPrInner(previousTrPrXml);
   const normalizedPreviousTrPr =
@@ -689,12 +696,26 @@ export function serializeTableCellFormatting(
     } else if (structuralChange.type === 'tableCellDeletion') {
       parts.push(`<w:cellDel ${serializeTrackedChangeAttributes(structuralChange.info)}/>`);
     } else if (structuralChange.type === 'tableCellMerge') {
-      parts.push(`<w:cellMerge ${serializeTrackedChangeAttributes(structuralChange.info)}/>`);
+      // CT_CellMergeTrackChange (wml.xsd:811) uses `w:vMerge`/`w:vMergeOrig`
+      // (ST_AnnotationVMerge: "rest" | "cont"); both are optional. Only emit
+      // each attribute when the parsed source actually carried it — defaulting
+      // `w:vMerge="cont"` on a bare `<w:cellMerge/>` would change merge
+      // semantics on round-trip.
+      const vMergeAttr = structuralChange.vMerge ? ` w:vMerge="${structuralChange.vMerge}"` : '';
+      const vMergeOrigAttr = structuralChange.vMergeOrig
+        ? ` w:vMergeOrig="${structuralChange.vMergeOrig}"`
+        : '';
+      parts.push(
+        `<w:cellMerge ${serializeTrackedChangeAttributes(structuralChange.info)}${vMergeAttr}${vMergeOrigAttr}/>`
+      );
     }
   }
 
+  // OOXML allows at most one `<w:tcPrChange>` per `<w:tcPr>` (CT_TcPrInner
+  // maxOccurs="1"). The model array can carry multiple in-memory; emit only
+  // the first to stay schema-valid.
   if (propertyChanges && propertyChanges.length > 0) {
-    parts.push(...propertyChanges.map((change) => serializeTableCellPropertyChange(change)));
+    parts.push(serializeTableCellPropertyChange(propertyChanges[0]));
   }
 
   if (parts.length === 0) return '';
@@ -710,7 +731,7 @@ function extractTcPrInner(tcPrXml: string): string {
 }
 
 function serializeTableCellPropertyChange(change: TableCellPropertyChange): string {
-  const attrs = serializeTrackedChangeAttributes(change.info, change.info.rsid);
+  const attrs = serializeTrackedChangeAttributes(change.info);
   const previousTcPrXml = serializeTableCellFormatting(change.previousFormatting) || '<w:tcPr/>';
   const previousTcPrInner = extractTcPrInner(previousTcPrXml);
   const normalizedPreviousTcPr =

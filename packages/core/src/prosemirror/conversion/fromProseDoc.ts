@@ -30,7 +30,6 @@ import type {
 } from '../../types/document';
 import type { TextBoxAttrs } from '../extensions/nodes/TextBoxExtension';
 import { shouldExportTextBoxInsideFollowingParagraph } from './textBoxAnchors';
-import { buildDocumentTrackedChangeCounts } from './fromProseDoc/marks';
 import { convertPMParagraph } from './fromProseDoc/paragraph';
 import { convertPMTable } from './fromProseDoc/tables';
 import { convertPMTextBox, convertPMTextBoxRun } from './fromProseDoc/textbox';
@@ -73,7 +72,6 @@ export function fromProseDoc(pmDoc: PMNode, baseDocument?: Document): Document {
  */
 function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
   const blocks: (Paragraph | Table)[] = [];
-  const documentCounts = buildDocumentTrackedChangeCounts(pmDoc);
   let pendingAnchoredTextBoxRuns: Run[] = [];
 
   const flushPendingTextBoxes = (): void => {
@@ -88,7 +86,7 @@ function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
 
   pmDoc.forEach((node) => {
     if (node.type.name === 'paragraph') {
-      const paragraph = convertPMParagraph(node, documentCounts);
+      const paragraph = convertPMParagraph(node);
       if (pendingAnchoredTextBoxRuns.length > 0) {
         paragraph.content = [...pendingAnchoredTextBoxRuns, ...paragraph.content];
         pendingAnchoredTextBoxRuns = [];
@@ -96,7 +94,7 @@ function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
       blocks.push(paragraph);
     } else if (node.type.name === 'table') {
       flushPendingTextBoxes();
-      blocks.push(convertPMTable(node, documentCounts));
+      blocks.push(convertPMTable(node));
     } else if (node.type.name === 'textBox') {
       const attrs = node.attrs as TextBoxAttrs;
       if (shouldExportTextBoxInsideFollowingParagraph(attrs)) {

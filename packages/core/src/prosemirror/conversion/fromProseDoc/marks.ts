@@ -2,50 +2,13 @@
  * Mark coalescing & TextFormatting conversion.
  *
  * Helpers used by the run/paragraph walkers to (a) decide when two adjacent
- * text runs share their full mark set (for run coalescing on save), and
- * (b) project a Mark[] back to the OOXML-shaped `TextFormatting`. Also
- * owns the document-wide tracked-change counters used for cross-paragraph
- * move-pair detection.
+ * text runs share their full mark set (for run coalescing on save) and
+ * (b) project a Mark[] back to the OOXML-shaped `TextFormatting`.
  */
 
-import type { Node as PMNode, Mark } from 'prosemirror-model';
+import type { Mark } from 'prosemirror-model';
 import type { TextFormatting } from '../../../types/document';
 import type { TextColorAttrs, UnderlineAttrs, FontFamilyAttrs } from '../../schema/marks';
-
-export type TrackedChangeCounts = {
-  insertionById: Map<number, number>;
-  deletionById: Map<number, number>;
-};
-
-/**
- * Build document-wide tracked change counts by scanning all nodes.
- * Used for cross-paragraph move pair detection (moveFrom in one paragraph,
- * moveTo in another).
- */
-export function buildDocumentTrackedChangeCounts(pmDoc: PMNode): TrackedChangeCounts {
-  const insertionById = new Map<number, number>();
-  const deletionById = new Map<number, number>();
-
-  pmDoc.descendants((node) => {
-    const insertionMark = node.marks.find((m) => m.type.name === 'insertion');
-    const deletionMark = node.marks.find((m) => m.type.name === 'deletion');
-
-    if (insertionMark) {
-      const revisionId = Number(insertionMark.attrs.revisionId);
-      if (Number.isFinite(revisionId)) {
-        insertionById.set(revisionId, (insertionById.get(revisionId) ?? 0) + 1);
-      }
-    }
-    if (deletionMark) {
-      const revisionId = Number(deletionMark.attrs.revisionId);
-      if (Number.isFinite(revisionId)) {
-        deletionById.set(revisionId, (deletionById.get(revisionId) ?? 0) + 1);
-      }
-    }
-  });
-
-  return { insertionById, deletionById };
-}
 
 /**
  * Create a unique key for a link mark

@@ -19,6 +19,11 @@ export const InsertionExtension = createMarkExtension({
       revisionId: { default: 0 },
       author: { default: '' },
       date: { default: null },
+      // True only when parsed from `<w:moveTo>`. The serializer uses this to
+      // emit `<w:moveFrom>`/`<w:moveTo>` faithfully; without it, an
+      // insertion + deletion that happen to share a `w:id` (not unique
+      // per ECMA-376) would be silently flipped into a move pair on save.
+      isMovePair: { default: false },
     },
     inclusive: false,
     parseDOM: [
@@ -30,6 +35,7 @@ export const InsertionExtension = createMarkExtension({
             revisionId: parseInt(el.dataset.revisionId || '0', 10),
             author: el.dataset.author || '',
             date: el.dataset.date || null,
+            isMovePair: el.dataset.movePair === 'true',
           };
         },
       },
@@ -42,6 +48,7 @@ export const InsertionExtension = createMarkExtension({
           'data-revision-id': String(mark.attrs.revisionId),
           'data-author': mark.attrs.author,
           ...(mark.attrs.date ? { 'data-date': mark.attrs.date } : {}),
+          ...(mark.attrs.isMovePair ? { 'data-move-pair': 'true' } : {}),
           style: 'color: #2e7d32;',
         },
         0,
@@ -62,6 +69,9 @@ export const DeletionExtension = createMarkExtension({
       revisionId: { default: 0 },
       author: { default: '' },
       date: { default: null },
+      // True only when parsed from `<w:moveFrom>`. See InsertionExtension
+      // above for the rationale — id coincidence is not a reliable signal.
+      isMovePair: { default: false },
     },
     inclusive: false,
     parseDOM: [
@@ -73,6 +83,7 @@ export const DeletionExtension = createMarkExtension({
             revisionId: parseInt(el.dataset.revisionId || '0', 10),
             author: el.dataset.author || '',
             date: el.dataset.date || null,
+            isMovePair: el.dataset.movePair === 'true',
           };
         },
       },
@@ -85,6 +96,7 @@ export const DeletionExtension = createMarkExtension({
           'data-revision-id': String(mark.attrs.revisionId),
           'data-author': mark.attrs.author,
           ...(mark.attrs.date ? { 'data-date': mark.attrs.date } : {}),
+          ...(mark.attrs.isMovePair ? { 'data-move-pair': 'true' } : {}),
           style: 'color: #c62828;',
         },
         0,

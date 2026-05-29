@@ -28,6 +28,33 @@ export interface TrackedChangeInfo {
 }
 
 /**
+ * Tracked-change attribute triple as it appears on PM node attrs
+ * (`paragraph.pPrIns`, `tableRow.trIns`, etc). Mirrors `TrackedChangeInfo`
+ * but with a `null` date (PM attr defaults) and a `revisionId` name that
+ * matches OOXML's `w:id` more idiomatically on the editor side.
+ *
+ * Round-trip pairs with `TrackedChangeInfo` via
+ * `{ id, author, date? } ↔ { revisionId, author, date | null }`.
+ */
+export interface RevisionInfo {
+  revisionId: number;
+  author: string;
+  date: string | null;
+}
+
+/**
+ * Tracked-cell marker — the OOXML `<w:cellIns>` / `<w:cellDel>` /
+ * `<w:cellMerge>` shape attached to a `TableCell` PM node and surfaced
+ * to the layout model and painter for visual rendering.
+ *
+ * `kind` matches the OOXML element name (ins / del / merge).
+ */
+export interface CellMarker {
+  kind: 'ins' | 'del' | 'merge';
+  info: RevisionInfo;
+}
+
+/**
  * Generic tracked property-change wrapper metadata (w:*PrChange)
  */
 export interface PropertyChangeInfo extends TrackedChangeInfo {
@@ -197,4 +224,14 @@ export interface TableStructuralChangeInfo {
     | 'tableCellMerge';
   /** Tracked change metadata */
   info: TrackedChangeInfo;
+  /**
+   * `<w:cellMerge w:vMerge="…">` value, only meaningful for `tableCellMerge`.
+   * Schema `ST_AnnotationVMerge`: `"rest"` = anchor (start of merged span),
+   * `"cont"` = continuation (merged into predecessor). Word's default for a
+   * tracked merge is `"cont"` (most edits track "this cell got merged INTO
+   * the one above"); we preserve the on-disk value when present.
+   */
+  vMerge?: 'rest' | 'cont';
+  /** `<w:cellMerge w:vMergeOrig="…">` — the pre-merge vMerge state. */
+  vMergeOrig?: 'rest' | 'cont';
 }

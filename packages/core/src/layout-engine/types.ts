@@ -325,6 +325,15 @@ export type ParagraphAttrs = {
    * (#381).
    */
   suppressEmptyParagraphHeight?: boolean;
+  /**
+   * Tracked-change marker on the paragraph mark itself
+   * (`<w:pPr><w:rPr><w:ins/>`). The painter renders a pilcrow and margin
+   * change bar; the cache key includes presence so two paragraphs with
+   * different revisions don't share a measurement.
+   */
+  pPrIns?: import('../types/content/trackedChange').RevisionInfo | null;
+  /** Tracked-change marker on the paragraph mark (`<w:pPr><w:rPr><w:del/>`). */
+  pPrDel?: import('../types/content/trackedChange').RevisionInfo | null;
 };
 
 /**
@@ -384,6 +393,8 @@ export type TableCell = {
    * — content stays on one line and the cell expands horizontally.
    */
   noWrap?: boolean;
+  /** Tracked cell marker (`<w:cellIns>` / `<w:cellDel>` / `<w:cellMerge>`) — painter colors the top border. */
+  trackedMarker?: import('../types/content/trackedChange').CellMarker;
 };
 
 /**
@@ -395,6 +406,9 @@ export type TableRow = {
   height?: number;
   heightRule?: 'auto' | 'atLeast' | 'exact';
   isHeader?: boolean;
+  /** Tracked row ins / del (`<w:trPr><w:ins/>` / `<w:del/>`). */
+  trackedIns?: import('../types/content/trackedChange').RevisionInfo;
+  /** see trackedIns */ trackedDel?: import('../types/content/trackedChange').RevisionInfo;
 };
 
 /**

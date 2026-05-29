@@ -5,14 +5,53 @@
  * structural and live in a follow-up; this surface only covers anchor↔anchor.
  */
 
-import type { Command } from 'prosemirror-state';
+import type { Command, EditorState, Transaction } from 'prosemirror-state';
+import type { Node as PMNode } from 'prosemirror-model';
 import { singletonManager } from '../schema';
+import { makeRevisionInfo } from '../plugins/revisionIds';
 import type {
   ImageLayoutTarget,
   SetImageWrapTypeOptions,
 } from '../extensions/nodes/ImageExtension';
 
 const cmds = singletonManager.getCommands();
+
+/**
+ * Insert an image node at `pos`, wrapping with the `insertion` mark when
+ * suggesting mode is active. Centralizes the tracked-image-insert flow
+ * so React `useFileIO`, Vue `useImageActions`, and clipboard-paste
+ * paths all share one source of truth — adding a fresh image in
+ * suggesting mode always round-trips as `<w:ins>{run with drawing}</w:ins>`.
+ *
+ * Caller responsibility: produce the `image` node via `schema.nodes.image.create`.
+ * This helper handles the dispatch + optional mark application.
+ *
+ * @public
+ */
+export function insertImageNode(
+  state: EditorState,
+  dispatch: ((tr: Transaction) => void) | undefined,
+  imageNode: PMNode,
+  pos: number
+): boolean {
+  if (!dispatch) return true;
+  const tr = state.tr.insert(pos, imageNode);
+  const info = makeRevisionInfo(state);
+  const insertionType = state.schema.marks.insertion;
+  if (info && insertionType) {
+    tr.addMark(
+      pos,
+      pos + imageNode.nodeSize,
+      insertionType.create({
+        revisionId: info.revisionId,
+        author: info.author,
+        date: info.date,
+      })
+    );
+  }
+  dispatch(tr.scrollIntoView());
+  return true;
+}
 
 /**
  * Change a floating image's wrap layout. `pos` is the PM document position of
