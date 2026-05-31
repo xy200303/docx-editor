@@ -562,6 +562,16 @@ export function createReviewerBridge(reviewer: DocxReviewer): EditorBridge {
       }
     },
 
+    /** Headless reviewer bridge is read/comment/redline oriented; structural live inserts need an editor view. */
+    insertTable(): boolean {
+      return false;
+    },
+
+    /** Headless reviewer bridge is read/comment/redline oriented; structural live inserts need an editor view. */
+    insertImage(): boolean {
+      return false;
+    },
+
     /** Headless mode: pages are a layout concept; the static document has none. */
     getPage(): null {
       return null;

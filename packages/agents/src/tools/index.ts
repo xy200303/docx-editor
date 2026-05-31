@@ -220,6 +220,162 @@ const suggestChange: AgentToolDefinition<{
   },
 };
 
+const insertTableTool: AgentToolDefinition<{
+  rows: number;
+  columns: number;
+  data?: string[][];
+  hasHeader?: boolean;
+  paraId?: string;
+}> = {
+  name: 'insert_table',
+  displayName: 'Inserting table',
+  description:
+    'Insert a table into the live document. By default it inserts at the user cursor. ' +
+    'Pass `paraId` to insert after a specific paragraph returned by read_document / find_text. ' +
+    '`data` is an optional 2D string array; missing cells are left empty and extra cells are ignored.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      rows: { type: 'number', description: 'Number of rows. Must be an integer from 1 to 20.' },
+      columns: {
+        type: 'number',
+        description: 'Number of columns. Must be an integer from 1 to 10.',
+      },
+      data: {
+        type: 'array',
+        description: 'Optional table cell contents as rows of strings.',
+        items: { type: 'array', items: { type: 'string' } },
+      },
+      hasHeader: {
+        type: 'boolean',
+        description: 'Whether the first row should be treated as a table header.',
+      },
+      paraId: {
+        type: 'string',
+        description: 'Optional paragraph id. When supplied, inserts after that paragraph.',
+      },
+    },
+    required: ['rows', 'columns'],
+  },
+  handler: (input, bridge) => {
+    const rows = Number(input.rows);
+    const columns = Number(input.columns);
+    if (!Number.isInteger(rows) || rows < 1 || rows > 20) {
+      return { success: false, error: '`rows` must be an integer from 1 to 20.' };
+    }
+    if (!Number.isInteger(columns) || columns < 1 || columns > 10) {
+      return { success: false, error: '`columns` must be an integer from 1 to 10.' };
+    }
+    if (
+      input.data !== undefined &&
+      (!Array.isArray(input.data) ||
+        !input.data.every(
+          (row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string')
+        ))
+    ) {
+      return { success: false, error: '`data` must be a 2D array of strings.' };
+    }
+    if (input.hasHeader !== undefined && typeof input.hasHeader !== 'boolean') {
+      return { success: false, error: '`hasHeader` must be a boolean when provided.' };
+    }
+    if (input.paraId !== undefined && typeof input.paraId !== 'string') {
+      return { success: false, error: '`paraId` must be a string when provided.' };
+    }
+
+    const ok = bridge.insertTable({
+      rows,
+      columns,
+      data: input.data,
+      hasHeader: input.hasHeader,
+      paraId: input.paraId,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not insert table. Possible causes: the editor is not ready, this adapter does ' +
+          'not support structural insertions, or the supplied paraId was not found.',
+      };
+    }
+    return { success: true, data: `Inserted ${rows}x${columns} table.` };
+  },
+};
+
+const insertImageTool: AgentToolDefinition<{
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  paraId?: string;
+}> = {
+  name: 'insert_image',
+  displayName: 'Inserting image',
+  description:
+    'Insert an inline image into the live document. The `src` must be a base64 data URL ' +
+    '(for example `data:image/png;base64,...`) so DOCX export can embed it. By default it ' +
+    'inserts at the user cursor; pass `paraId` to insert at the end of that paragraph.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      src: {
+        type: 'string',
+        description: 'Base64 image data URL, e.g. data:image/png;base64,...',
+      },
+      alt: { type: 'string', description: 'Alt text / description for the image.' },
+      width: {
+        type: 'number',
+        description: 'Rendered width in pixels. Defaults to 320 when omitted.',
+      },
+      height: {
+        type: 'number',
+        description: 'Rendered height in pixels. Defaults to 180 when omitted.',
+      },
+      paraId: {
+        type: 'string',
+        description: 'Optional paragraph id. When supplied, inserts at the end of that paragraph.',
+      },
+    },
+    required: ['src'],
+  },
+  handler: (input, bridge) => {
+    if (typeof input.src !== 'string' || !/^data:image\/[^;]+;base64,/.test(input.src)) {
+      return {
+        success: false,
+        error: '`src` must be a base64 image data URL such as data:image/png;base64,...',
+      };
+    }
+    if (input.alt !== undefined && typeof input.alt !== 'string') {
+      return { success: false, error: '`alt` must be a string when provided.' };
+    }
+    if (input.paraId !== undefined && typeof input.paraId !== 'string') {
+      return { success: false, error: '`paraId` must be a string when provided.' };
+    }
+
+    const width = input.width ?? 320;
+    const height = input.height ?? 180;
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return { success: false, error: '`width` and `height` must be positive numbers.' };
+    }
+
+    const ok = bridge.insertImage({
+      src: input.src,
+      alt: input.alt,
+      width,
+      height,
+      paraId: input.paraId,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not insert image. Possible causes: the editor is not ready, this adapter does ' +
+          'not support image insertion, or the supplied paraId was not found.',
+      };
+    }
+    return { success: true, data: 'Image inserted.' };
+  },
+};
+
 const replyComment: AgentToolDefinition<{ commentId: number; text: string }> = {
   name: 'reply_comment',
   displayName: 'Replying to comment',
@@ -296,6 +452,8 @@ export const agentTools: AgentToolDefinition<any>[] = [
   readChanges,
   addComment,
   suggestChange,
+  insertTableTool,
+  insertImageTool,
   applyFormatting,
   setParagraphStyle,
   replyComment,

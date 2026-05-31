@@ -8,9 +8,11 @@
 
 import type { EditorState, Transaction } from 'prosemirror-state';
 import { singletonManager } from '../schema';
+import type { InsertTableOptions } from '../extensions/nodes/TableExtension/commands/insert';
 
 // Re-export types and query helpers from TableExtension
 export type { TableContextInfo, BorderPreset } from '../extensions/nodes/TableExtension';
+export type { InsertTableOptions } from '../extensions/nodes/TableExtension/commands/insert';
 export { getTableContext, isInTable } from '../extensions/nodes/TableExtension';
 
 // ============================================================================
@@ -22,9 +24,10 @@ const cmds = singletonManager.getCommands();
 // Table creation
 export function insertTable(
   rows: number,
-  cols: number
+  cols: number,
+  options?: InsertTableOptions
 ): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean {
-  return cmds.insertTable(rows, cols);
+  return cmds.insertTable(rows, cols, options);
 }
 
 // Row operations

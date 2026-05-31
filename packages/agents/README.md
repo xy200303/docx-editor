@@ -51,7 +51,7 @@ That's the static-review path: drop into a CI bot, queue worker, or Lambda. No e
 
 ## Live editor bridge
 
-Wire AI tools into a running `<DocxEditor>` so `add_comment`, `suggest_change`, `find_text` etc. show up live in the user's editor.
+Wire AI tools into a running `<DocxEditor>` so `add_comment`, `suggest_change`, `insert_table`, `insert_image`, `find_text` etc. show up live in the user's editor.
 
 ```ts
 // React
@@ -86,7 +86,7 @@ app.post('/api/mcp', requireAuth, async (req, res) => {
 });
 ```
 
-Ten built-in agent tools (`read_document`, `find_text`, `add_comment`, `suggest_change`, `read_comments`, `read_changes`, `reply_comment`, `resolve_comment`, `read_selection`, `scroll`) are exposed automatically via MCP `tools/list` and `tools/call`. MCP spec version: `2025-06-18`.
+Built-in agent tools (`read_document`, `find_text`, `add_comment`, `suggest_change`, `insert_table`, `insert_image`, `read_comments`, `read_changes`, `reply_comment`, `resolve_comment`, `read_selection`, `read_page`, `read_pages`, `apply_formatting`, `set_paragraph_style`, `scroll`) are exposed automatically via MCP `tools/list` and `tools/call`. MCP spec version: `2025-06-18`.
 
 > A local stdio MCP bin is one-document-per-config (Claude Desktop loads its list at startup), which doesn't fit a multi-doc product. Host the server yourself with your own auth and storage.
 

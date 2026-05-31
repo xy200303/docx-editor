@@ -169,6 +169,20 @@ export interface DocxEditorRef {
     } | null;
     getTotalPages: () => number;
     getZoom: () => number;
+    insertImage: (options: {
+        src: string;
+        alt?: string;
+        width?: number;
+        height?: number;
+        paraId?: string;
+    }) => boolean;
+    insertTable: (options: {
+        rows: number;
+        columns: number;
+        data?: string[][];
+        hasHeader?: boolean;
+        paraId?: string;
+    }) => boolean;
     loadDocument: (doc: Document_2) => void;
     loadDocumentBuffer: (buffer: DocxInput) => Promise<void>;
     onContentChange: (listener: (document: Document_2) => void) => () => void;

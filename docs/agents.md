@@ -1,6 +1,6 @@
 # Agents
 
-Add an AI assistant to your DOCX editor: a Google-Docs-style side panel, a streaming chat with a collapsible tool-call timeline, and a toolkit that lets the agent read/comment/redline by stable paragraph id. Working reference: [`examples/agent-chat-demo/`](../examples/agent-chat-demo/).
+Add an AI assistant to your DOCX editor: a Google-Docs-style side panel, a streaming chat with a collapsible tool-call timeline, and a toolkit that lets the agent read, comment, redline, format, insert tables, and insert images by stable paragraph id. Working reference: [`examples/agent-chat-demo/`](../examples/agent-chat-demo/).
 
 The library owns the panel chrome and chat primitives. **You bring your own agent runtime** — Vercel AI SDK, LangChain, Anthropic SDK, raw OpenAI, anything. We ship optional adapters for the AI SDK because it's the most popular path; everything else is plain JSON-Schema interop.
 
@@ -163,7 +163,7 @@ export default function Page() {
 }
 ```
 
-That's the full integration. Words stream in token-by-token; tool calls show up in the timeline (running spinner → green check); comments / tracked changes / formatting appear live in the doc as the agent emits them.
+That's the full integration. Words stream in token-by-token; tool calls show up in the timeline (running spinner → green check); comments, tracked changes, formatting, tables, and images appear live in the doc as the agent emits them.
 
 ---
 
@@ -226,6 +226,8 @@ The pattern is the same: schemas in, tool calls out, run them through `executeTo
 | `suggest_change`                   | Tracked change — user accepts or rejects                                      |
 | `apply_formatting`                 | Bold / italic / underline / strike / color / highlight / size / font          |
 | `set_paragraph_style`              | Heading or named style — rejects styleIds not in `styles.xml`                 |
+| `insert_table`                     | Insert an empty or data-filled table at the cursor or after a paraId          |
+| `insert_image`                     | Insert an inline image from a base64 data URL                                 |
 | `reply_comment`, `resolve_comment` | Comment thread ops                                                            |
 | `scroll`                           | Move the viewport to a paragraph                                              |
 

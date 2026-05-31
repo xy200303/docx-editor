@@ -24,6 +24,8 @@ function makeRef(): EditorRefLike {
     getComments: () => [],
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertTable: () => true,
+    insertImage: () => true,
     getPageContent: () => null,
     getTotalPages: () => 0,
     getCurrentPage: () => 0,
@@ -52,6 +54,8 @@ describe('WordCompatBridge — runtime parity', () => {
       'proposeChange',
       'applyFormatting',
       'setParagraphStyle',
+      'insertTable',
+      'insertImage',
       'getPage',
       'getPages',
       'getTotalPages',
@@ -90,6 +94,11 @@ describe('WordCompatBridge — runtime parity', () => {
 
   test('scrollTo returns boolean', () => {
     expect(typeof wordy.scrollTo('p_a3f')).toBe('boolean');
+  });
+
+  test('structural insertions return boolean', () => {
+    expect(typeof wordy.insertTable({ rows: 2, columns: 2 })).toBe('boolean');
+    expect(typeof wordy.insertImage({ src: 'data:image/png;base64,abc' })).toBe('boolean');
   });
 
   test('onContentChange returns an unsubscribe function', () => {

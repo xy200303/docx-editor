@@ -112,7 +112,7 @@ export {
   setTableBorderColor,
   setTableBorderWidth,
 } from './table';
-export type { TableContextInfo, BorderPreset } from './table';
+export type { TableContextInfo, BorderPreset, InsertTableOptions } from './table';
 
 // Page break
 export { insertPageBreak } from './pageBreak';

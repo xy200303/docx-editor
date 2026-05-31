@@ -15,12 +15,14 @@
  */
 
 import type { Ref, ShallowRef } from 'vue';
+import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
 import type { Comment } from '@eigenpal/docx-editor-core/types/content';
 import type { DocxInput } from '@eigenpal/docx-editor-core/utils';
 import type { Layout } from '@eigenpal/docx-editor-core/layout-engine';
 import { findPageIndexContainingPmPos } from '@eigenpal/docx-editor-core/layout-engine';
+import { insertImageNode, insertTable } from '@eigenpal/docx-editor-core/prosemirror/commands';
 import {
   findInDocument as findInDocumentImpl,
   getSelectionInfo as getSelectionInfoImpl,
@@ -152,6 +154,73 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     return getPageContentImpl(opts.editorView.value, opts.layout.value, pageNumber);
   }
 
+  function insertTableFromRef(options: {
+    rows: number;
+    columns: number;
+    data?: string[][];
+    hasHeader?: boolean;
+    paraId?: string;
+  }): boolean {
+    const view = opts.editorView.value;
+    if (!view) return false;
+    if (
+      !Number.isInteger(options.rows) ||
+      !Number.isInteger(options.columns) ||
+      options.rows < 1 ||
+      options.columns < 1
+    ) {
+      return false;
+    }
+
+    let state = view.state;
+    if (options.paraId) {
+      const range = findParaIdRange(state.doc, options.paraId);
+      if (!range) return false;
+      const pos = Math.max(range.from + 1, range.to - 1);
+      state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)));
+    }
+
+    const ok = insertTable(options.rows, options.columns, {
+      data: options.data,
+      hasHeader: options.hasHeader,
+    })(state, view.dispatch);
+    if (ok) view.focus();
+    return ok;
+  }
+
+  function insertImageFromRef(options: {
+    src: string;
+    alt?: string;
+    width?: number;
+    height?: number;
+    paraId?: string;
+  }): boolean {
+    const view = opts.editorView.value;
+    if (!view) return false;
+    const imageNodeType = view.state.schema.nodes.image;
+    if (!imageNodeType || !options.src) return false;
+
+    let pos = view.state.selection.from;
+    if (options.paraId) {
+      const range = findParaIdRange(view.state.doc, options.paraId);
+      if (!range) return false;
+      pos = range.to - 1;
+    }
+
+    const node = imageNodeType.create({
+      src: options.src,
+      alt: options.alt,
+      width: options.width ?? 320,
+      height: options.height ?? 180,
+      rId: `rId_img_${Date.now()}`,
+      wrapType: 'inline',
+      displayMode: 'inline',
+    });
+    const ok = insertImageNode(view.state, view.dispatch, node, pos);
+    if (ok) view.focus();
+    return ok;
+  }
+
   function onContentChange(listener: (document: unknown) => void): () => void {
     opts.contentChangeSubscribers.add(listener);
     return () => opts.contentChangeSubscribers.delete(listener);
@@ -187,6 +256,8 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     getComments,
     applyFormatting: opts.applyFormatting,
     setParagraphStyle: opts.setParagraphStyle,
+    insertTable: insertTableFromRef,
+    insertImage: insertImageFromRef,
     getPageContent,
     getTotalPages,
     getCurrentPage,

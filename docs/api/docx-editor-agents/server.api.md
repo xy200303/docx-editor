@@ -85,6 +85,8 @@ export interface EditorBridge {
     }): PageContent[];
     getSelection(): SelectionInfo | null;
     getTotalPages(): number;
+    insertImage(options: InsertImageOptions): boolean;
+    insertTable(options: InsertTableOptions): boolean;
     onContentChange(listener: (event: ContentChangeEvent) => void): () => void;
     onSelectionChange(listener: (event: SelectionChangeEvent) => void): () => void;
     proposeChange(options: ProposeChangeOptions): boolean;
@@ -109,6 +111,33 @@ export function getToolSchemas(): {
         parameters: Record<string, unknown>;
     };
 }[];
+
+// @public
+export interface InsertImageOptions {
+    // (undocumented)
+    alt?: string;
+    // (undocumented)
+    height?: number;
+    // (undocumented)
+    paraId?: string;
+    src: string;
+    // (undocumented)
+    width?: number;
+}
+
+// @public
+export interface InsertTableOptions {
+    // (undocumented)
+    columns: number;
+    // (undocumented)
+    data?: string[][];
+    // (undocumented)
+    hasHeader?: boolean;
+    // (undocumented)
+    paraId?: string;
+    // (undocumented)
+    rows: number;
+}
 
 // @public (undocumented)
 export interface SelectionInfo {

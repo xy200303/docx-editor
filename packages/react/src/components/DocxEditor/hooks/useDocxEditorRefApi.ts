@@ -3,7 +3,11 @@ import { TextSelection } from 'prosemirror-state';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
 import type { Comment } from '@eigenpal/docx-editor-core/types/content';
 import { DocumentAgent } from '@eigenpal/docx-editor-core/agent';
-import { applyStyle } from '@eigenpal/docx-editor-core/prosemirror/commands';
+import {
+  applyStyle,
+  insertImageNode,
+  insertTable,
+} from '@eigenpal/docx-editor-core/prosemirror/commands';
 import { createStyleResolver, type SelectionState } from '@eigenpal/docx-editor-core/prosemirror';
 import type { DocxInput } from '@eigenpal/docx-editor-core/utils';
 import type { DocxEditorRef } from '../../DocxEditor';
@@ -364,6 +368,59 @@ export function useDocxEditorRefApi({
         });
 
         return didApply;
+      },
+
+      insertTable: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+
+        if (
+          !Number.isInteger(options.rows) ||
+          !Number.isInteger(options.columns) ||
+          options.rows < 1 ||
+          options.columns < 1
+        ) {
+          return false;
+        }
+
+        let state = view.state;
+        if (options.paraId) {
+          const range = findParaIdRange(state.doc, options.paraId);
+          if (!range) return false;
+          const pos = Math.max(range.from + 1, range.to - 1);
+          state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, pos)));
+        }
+
+        return insertTable(options.rows, options.columns, {
+          data: options.data,
+          hasHeader: options.hasHeader,
+        })(state, view.dispatch);
+      },
+
+      insertImage: (options) => {
+        const view = pagedEditorRef.current?.getView();
+        if (!view) return false;
+        const imageType = view.state.schema.nodes.image;
+        if (!imageType || !options.src) return false;
+
+        let pos = view.state.selection.from;
+        if (options.paraId) {
+          const range = findParaIdRange(view.state.doc, options.paraId);
+          if (!range) return false;
+          pos = range.to - 1;
+        }
+
+        const imageNode = imageType.create({
+          src: options.src,
+          alt: options.alt,
+          width: options.width ?? 320,
+          height: options.height ?? 180,
+          rId: `rId_img_${Date.now()}`,
+          wrapType: 'inline',
+          displayMode: 'inline',
+        });
+
+        return insertImageNode(view.state, view.dispatch, imageNode, pos);
       },
 
       getPageContent: (pageNumber) => {

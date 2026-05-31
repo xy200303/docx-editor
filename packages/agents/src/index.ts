@@ -42,6 +42,8 @@ export type {
   BatchReviewOptions,
   BatchResult,
   BatchError,
+  InsertTableOptions,
+  InsertImageOptions,
 } from './types';
 
 export { TextNotFoundError, ChangeNotFoundError, CommentNotFoundError } from './errors';

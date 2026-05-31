@@ -270,7 +270,7 @@ export function insertHyperlink(text: string, href: string, tooltip?: string): C
 export const insertPageBreak: Command;
 
 // @public (undocumented)
-export function insertTable(rows: number, cols: number): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean;
+export function insertTable(rows: number, cols: number, options?: InsertTableOptions): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean;
 
 // @public (undocumented)
 export function isHyperlinkActive(state: EditorState): boolean;

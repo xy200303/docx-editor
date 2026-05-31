@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Roast My Doc — the canonical "plug an agent into the editor" reference.
+ * AI Word Editor — the canonical "plug an agent into the editor" reference.
  *
  * Three pieces:
  *  1. `<DocxEditor agentPanel={{ render }}>` mounts a controllable right-hand
@@ -10,11 +10,10 @@
  *     the hook owns the bridge to the live editor.
  *  3. The chat UI inside `render` is ~40 lines of plain React. We do not
  *     ship message bubbles or a composer; pick your favourite framework
- *     (this example uses raw fetch + OpenAI for zero deps; AI SDK's
- *     `useChat` works with one extra import).
+ *     (this example uses AI SDK's `useChat` for streaming + tool calls).
  *
- * Swap the system prompt + tool subset to retarget the agent (legal
- * redlining, writing assistant, summarizer — same plumbing).
+ * The default prompt is a WPS-style editing assistant: it can rewrite text,
+ * format paragraphs, insert tables, and generate/insert images.
  */
 
 import { useMemo, useRef, useState } from 'react';
@@ -74,7 +73,7 @@ export default function Page() {
   // system prompt. This is the entire docx-agents wiring on the React side.
   const { executeToolCall, getContext } = useDocxAgentTools({
     editorRef: editorRef as React.RefObject<EditorRefLike | null>,
-    author: 'Roastmaster',
+    author: 'AI Editor',
   });
 
   // AI SDK does the streaming protocol, history, error handling, and
@@ -96,6 +95,9 @@ export default function Page() {
     // either call another tool or write the final reply.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     onToolCall: ({ toolCall }) => {
+      // `generate_image` runs on the server because it needs the OpenAI image model.
+      if (toolCall.toolName === 'generate_image') return;
+
       const result = executeToolCall(
         toolCall.toolName,
         (toolCall.input ?? {}) as Record<string, unknown>
@@ -105,8 +107,7 @@ export default function Page() {
           ? result.data
           : (result.error ?? JSON.stringify(result.data));
       // Ship the result back to AI SDK so it commits to message history
-      // and the next stream turn can see it. AI SDK v5 changed onToolCall
-      // to fire-and-forget; we deliver via addToolResult.
+      // and the next stream turn can see it.
       void chatRef.current?.addToolResult({
         tool: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
@@ -177,7 +178,7 @@ export default function Page() {
           agentPanel={{
             open: panelOpen,
             onOpenChange: setPanelOpen,
-            title: 'Roastmaster',
+            title: 'AI Editor',
             minWidth: 320,
             defaultWidth: 380,
             render: () => (
@@ -186,13 +187,15 @@ export default function Page() {
                   messages={messages}
                   loading={isLoading}
                   error={error}
-                  humanizeToolName={getToolDisplayName}
+                  humanizeToolName={(name) =>
+                    name === 'generate_image' ? 'Generating image' : getToolDisplayName(name)
+                  }
                   emptyState={
                     <div style={S.welcomeCard}>
-                      <div style={S.welcomeTitle}>Hi, I&apos;m Roastmaster.</div>
+                      <div style={S.welcomeTitle}>Hi, I&apos;m your AI editor.</div>
                       <p style={S.welcomeBody}>
-                        I read your document and leave a (constructive) roast on every paragraph
-                        that deserves one.
+                        I can rewrite selected text, add tracked suggestions, create tables, and
+                        insert generated images directly into this DOCX.
                       </p>
                       <div style={S.chipStack}>
                         {SUGGESTIONS.map((s) => (
@@ -213,7 +216,7 @@ export default function Page() {
                   onSubmit={() => sendMessage()}
                   disabled={isLoading}
                   placeholder="Ask the assistant…"
-                  footnote="Roastmaster only reads + comments. Won't edit text."
+                  footnote="Edits appear live in the document. Text rewrites use tracked suggestions."
                 />
               </>
             ),
@@ -225,9 +228,9 @@ export default function Page() {
 }
 
 const SUGGESTIONS = [
-  'Roast every paragraph that deserves it.',
-  'Find the worst sentence and explain why.',
-  'Where am I being too wordy?',
+  'Rewrite the selected text to be clearer.',
+  'Insert a 4-row project plan table here.',
+  'Generate and insert a simple product roadmap image.',
 ];
 
 // Page-level styles only — chat chrome (bubbles, composer, suggestion

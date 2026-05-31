@@ -49,6 +49,8 @@ function makeBridge(): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertTable: () => true,
+    insertImage: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -200,7 +202,7 @@ describe('runStdioServer — error & lifecycle', () => {
     input.emit('data', '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
     const reply = parseLine(output.lines()[0]) as JsonRpcSuccess;
     const result = reply.result as { tools: Array<{ name: string }> };
-    expect(result.tools.length).toBe(14);
+    expect(result.tools.length).toBe(16);
   });
 });
 

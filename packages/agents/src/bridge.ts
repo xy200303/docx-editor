@@ -34,6 +34,8 @@ import type {
   SelectionInfo,
   ApplyFormattingOptions,
   SetParagraphStyleOptions,
+  InsertTableOptions,
+  InsertImageOptions,
   PageContent,
 } from './types';
 import { getContent, formatContentForLLM } from './content';
@@ -86,6 +88,10 @@ export interface EditorRefLike {
   }): boolean;
   /** Apply a paragraph style by styleId. Returns false if paraId is unknown. */
   setParagraphStyle(options: { paraId: string; styleId: string }): boolean;
+  /** Insert a table at the cursor, or after a paragraph when paraId is supplied. */
+  insertTable?(options: InsertTableOptions): boolean;
+  /** Insert an inline image at the cursor, or inside a paragraph when paraId is supplied. */
+  insertImage?(options: InsertImageOptions): boolean;
   /** Read a single page's paragraphs (1-indexed). Returns null if the page does not exist. */
   getPageContent(pageNumber: number): PageContent | null;
   /** Total number of pages currently rendered. */
@@ -135,6 +141,10 @@ export interface EditorBridge {
    * Direct edit, not a tracked change.
    */
   setParagraphStyle(options: SetParagraphStyleOptions): boolean;
+  /** Insert a table at the current cursor, or after `paraId` when supplied. */
+  insertTable(options: InsertTableOptions): boolean;
+  /** Insert an inline image at the current cursor, or at the end of `paraId` when supplied. */
+  insertImage(options: InsertImageOptions): boolean;
   /** Read a single page (1-indexed). Returns null if the page does not exist. */
   getPage(pageNumber: number): PageContent | null;
   /** Read a range of pages (1-indexed, inclusive). Out-of-range pages are skipped. */
@@ -328,6 +338,14 @@ export function createEditorBridge(editorRef: EditorRefLike, author = 'AI'): Edi
         paraId: options.paraId,
         styleId: options.styleId,
       });
+    },
+
+    insertTable(options: InsertTableOptions): boolean {
+      return editorRef.insertTable?.(options) ?? false;
+    },
+
+    insertImage(options: InsertImageOptions): boolean {
+      return editorRef.insertImage?.(options) ?? false;
     },
 
     getPage(pageNumber: number): PageContent | null {

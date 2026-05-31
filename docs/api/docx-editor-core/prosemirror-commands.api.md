@@ -183,7 +183,15 @@ export function insertImageNode(state: EditorState, dispatch: ((tr: Transaction)
 export const insertPageBreak: Command;
 
 // @public (undocumented)
-export function insertTable(rows: number, cols: number): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean;
+export function insertTable(rows: number, cols: number, options?: InsertTableOptions): (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean;
+
+// @public (undocumented)
+export interface InsertTableOptions {
+    // (undocumented)
+    data?: readonly (readonly string[])[];
+    // (undocumented)
+    hasHeader?: boolean;
+}
 
 // @public (undocumented)
 export function isHyperlinkActive(state: EditorState): boolean;

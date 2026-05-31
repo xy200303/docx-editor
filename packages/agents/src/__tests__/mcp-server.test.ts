@@ -18,6 +18,8 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertTable: () => true,
+    insertImage: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -61,7 +63,7 @@ describe('McpServer.handle — tools/list', () => {
     const reply = server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     const result = (reply as JsonRpcSuccess).result as McpToolsListResult;
     expect(result.tools).toBeDefined();
-    expect(result.tools.length).toBe(14);
+    expect(result.tools.length).toBe(16);
     for (const tool of result.tools) {
       expect(typeof tool.name).toBe('string');
       expect(typeof tool.description).toBe('string');
@@ -73,6 +75,8 @@ describe('McpServer.handle — tools/list', () => {
         'add_comment',
         'apply_formatting',
         'find_text',
+        'insert_image',
+        'insert_table',
         'read_changes',
         'read_comments',
         'read_document',

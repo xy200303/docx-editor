@@ -81,6 +81,20 @@ export type DocxEditorRef = EditorRefLike & {
     focus(): void;
     scrollToPage(pageNumber: number): void;
     scrollToPosition(pmPos: number): void;
+    insertTable(options: {
+        rows: number;
+        columns: number;
+        data?: string[][];
+        hasHeader?: boolean;
+        paraId?: string;
+    }): boolean;
+    insertImage(options: {
+        src: string;
+        alt?: string;
+        width?: number;
+        height?: number;
+        paraId?: string;
+    }): boolean;
     openPrintPreview(): void;
     print(): void;
     loadDocument(doc: Document_2): void;

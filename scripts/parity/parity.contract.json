@@ -70,6 +70,8 @@
       "focus",
       "getAgent",
       "getZoom",
+      "insertImage",
+      "insertTable",
       "loadDocument",
       "loadDocumentBuffer",
       "openPrintPreview",

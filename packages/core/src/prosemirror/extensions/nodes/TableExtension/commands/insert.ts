@@ -15,6 +15,18 @@ import { getTableContext } from '../context';
 import { buildCellAttrsFromTemplate } from './helpers';
 import { makeRevisionInfo as makeSuggestionInfo } from '../../../../plugins/revisionIds';
 
+export interface InsertTableOptions {
+  data?: readonly (readonly string[])[];
+  hasHeader?: boolean;
+}
+
+function createCellParagraph(schema: Schema, text: string | undefined): PMNode {
+  const normalized = text?.replace(/\r?\n/g, ' ').trim();
+  return normalized
+    ? schema.nodes.paragraph.create(null, schema.text(normalized))
+    : schema.nodes.paragraph.create();
+}
+
 /**
  * Build a tracked-row-insertion row + cells. Caller decides where to insert.
  */
@@ -59,7 +71,8 @@ export function makeCreateTable(schema: Schema) {
     cols: number,
     borderColor: string = '000000',
     contentWidthTwips: number = 9360,
-    info?: import('../../../../../types/content/trackedChange').RevisionInfo | null
+    info?: import('../../../../../types/content/trackedChange').RevisionInfo | null,
+    options: InsertTableOptions = {}
   ): PMNode {
     const tableRows: PMNode[] = [];
     const colWidthTwips = Math.floor(contentWidthTwips / cols);
@@ -77,7 +90,7 @@ export function makeCreateTable(schema: Schema) {
     for (let r = 0; r < rows; r++) {
       const cells: PMNode[] = [];
       for (let c = 0; c < cols; c++) {
-        const paragraph = schema.nodes.paragraph.create();
+        const paragraph = createCellParagraph(schema, options.data?.[r]?.[c]);
         const cellAttrs: Record<string, unknown> = {
           colspan: 1,
           rowspan: 1,
@@ -94,6 +107,7 @@ export function makeCreateTable(schema: Schema) {
         height: defaultRowHeightTwips,
         heightRule: defaultRowHeightRule,
       };
+      if (r === 0 && options.hasHeader) rowAttrs.isHeader = true;
       if (info) rowAttrs.trIns = info;
       tableRows.push(schema.nodes.tableRow.create(rowAttrs, cells));
     }
@@ -112,7 +126,11 @@ export function makeCreateTable(schema: Schema) {
 
 export function makeInsertTable(schema: Schema) {
   const createTable = makeCreateTable(schema);
-  return function insertTable(rows: number, cols: number): Command {
+  return function insertTable(
+    rows: number,
+    cols: number,
+    options: InsertTableOptions = {}
+  ): Command {
     return (state, dispatch) => {
       const { $from } = state.selection;
 
@@ -157,7 +175,14 @@ export function makeInsertTable(schema: Schema) {
         // table round-trips as a tracked addition; reject removes the whole
         // table via resolveById, accept clears the markers.
         const suggestingInfo = makeSuggestionInfo(state);
-        const table = createTable(rows, cols, borderColor, contentWidthTwips, suggestingInfo);
+        const table = createTable(
+          rows,
+          cols,
+          borderColor,
+          contentWidthTwips,
+          suggestingInfo,
+          options
+        );
         const emptyParagraph = schema.nodes.paragraph.create();
 
         const $insert = state.doc.resolve(insertPos);

@@ -29,6 +29,8 @@
  * | `Document.onSelectionChanged.add()` | `onSelectionChange(listener)`         |
  * | `Range.font.bold` / `italic` / `color` / `size` / `name` | `applyFormatting({paraId, search?, marks})` |
  * | `ParagraphFormat.style` / `applyStyle(...)` | `setParagraphStyle({paraId, styleId})` |
+ * | `body.insertTable(...)` / `range.insertTable(...)` | `insertTable({rows, columns, data?, paraId?})` |
+ * | `range.insertInlinePictureFromBase64(...)` | `insertImage({src, width?, height?, paraId?})` |
  *
  * ## Beyond Word's surface (paged-document affordances)
  *
@@ -54,7 +56,7 @@
  * ## Out of scope (gaps we deliberately don't implement)
  *
  *  - Paragraph creation (`body.insertParagraph`). Out of scope for v1.
- *  - Table mutation (insert row/col, delete cell). Read-only.
+ *  - Table mutation after insertion (insert row/col, delete cell).
  *  - Headers / footers / sections.
  *  - `Range.getOoxml()` / `getHtml()`. Plain text only.
  *  - `customXmlParts` / `contentControls`.
@@ -79,6 +81,8 @@ import type {
   SelectionInfo,
   ApplyFormattingOptions,
   SetParagraphStyleOptions,
+  InsertTableOptions,
+  InsertImageOptions,
   PageContent,
 } from './types';
 
@@ -138,6 +142,18 @@ export interface WordCompatBridge {
 
   /** Word: `paragraph.styleBuiltIn = ...` / `paragraph.style = 'Heading 1'`. */
   setParagraphStyle(options: SetParagraphStyleOptions): boolean;
+
+  /**
+   * Word: `body.insertTable(...)` / `range.insertTable(...)`.
+   * Inserts at the cursor, or after `paraId` when supplied.
+   */
+  insertTable(options: InsertTableOptions): boolean;
+
+  /**
+   * Word: `range.insertInlinePictureFromBase64(...)`.
+   * Accepts a data URL so DOCX export can embed the binary image.
+   */
+  insertImage(options: InsertImageOptions): boolean;
 
   // ── Paged document affordances (no Word equivalent) ─────────────────────
 

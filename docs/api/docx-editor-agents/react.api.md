@@ -186,6 +186,8 @@ export interface EditorRefLike {
     // (undocumented)
     getSelectionInfo(): SelectionInfo | null;
     getTotalPages(): number;
+    insertImage?(options: InsertImageOptions): boolean;
+    insertTable?(options: InsertTableOptions): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)
@@ -211,6 +213,33 @@ export interface EditorRefLike {
 
 // @public
 export function getToolDisplayName(name: string): string;
+
+// @public
+export interface InsertImageOptions {
+    // (undocumented)
+    alt?: string;
+    // (undocumented)
+    height?: number;
+    // (undocumented)
+    paraId?: string;
+    src: string;
+    // (undocumented)
+    width?: number;
+}
+
+// @public
+export interface InsertTableOptions {
+    // (undocumented)
+    columns: number;
+    // (undocumented)
+    data?: string[][];
+    // (undocumented)
+    hasHeader?: boolean;
+    // (undocumented)
+    paraId?: string;
+    // (undocumented)
+    rows: number;
+}
 
 // @public
 export function useAgentChat(options: UseAgentChatOptions): UseAgentChatReturn;

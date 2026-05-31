@@ -79,4 +79,5 @@ export type { UseAgentBridgeOptions, UseAgentBridgeReturn } from './vue/composab
 
 export type { EditorRefLike } from './bridge';
 export type { AgentToolDefinition, AgentToolResult } from './tools';
+export type { InsertImageOptions, InsertTableOptions } from './types';
 export { getToolDisplayName } from './tools';

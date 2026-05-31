@@ -25,6 +25,8 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertTable: () => true,
+    insertImage: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -41,8 +43,8 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
 // ============================================================================
 
 describe('agentTools', () => {
-  test('has 14 built-in tools', () => {
-    expect(agentTools).toHaveLength(14);
+  test('has 16 built-in tools', () => {
+    expect(agentTools).toHaveLength(16);
   });
 
   test('all tools have name, description, inputSchema, handler', () => {
@@ -66,6 +68,8 @@ describe('agentTools', () => {
         'add_comment',
         'apply_formatting',
         'find_text',
+        'insert_image',
+        'insert_table',
         'read_changes',
         'read_comments',
         'read_document',
@@ -89,7 +93,7 @@ describe('agentTools', () => {
 describe('getToolSchemas', () => {
   test('returns OpenAI function calling format', () => {
     const schemas = getToolSchemas();
-    expect(schemas.length).toBe(14);
+    expect(schemas.length).toBe(16);
 
     for (const schema of schemas) {
       expect(schema.type).toBe('function');
@@ -359,6 +363,121 @@ describe('suggest_change', () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain('paraId');
+  });
+});
+
+// ============================================================================
+// insert_table / insert_image
+// ============================================================================
+
+describe('insert_table', () => {
+  test('passes table shape, data and paraId through to the bridge', () => {
+    let captured: Parameters<EditorBridge['insertTable']>[0] | undefined;
+    const bridge = makeBridge({
+      insertTable: (opts) => {
+        captured = opts;
+        return true;
+      },
+    });
+    const result = executeToolCall(
+      'insert_table',
+      {
+        rows: 2,
+        columns: 2,
+        hasHeader: true,
+        paraId: 'p_a3f',
+        data: [
+          ['Name', 'Score'],
+          ['Ada', '99'],
+        ],
+      },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({
+      rows: 2,
+      columns: 2,
+      hasHeader: true,
+      paraId: 'p_a3f',
+      data: [
+        ['Name', 'Score'],
+        ['Ada', '99'],
+      ],
+    });
+  });
+
+  test('rejects dimensions outside the supported range', () => {
+    const result = executeToolCall('insert_table', { rows: 0, columns: 2 }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('rows');
+  });
+
+  test('rejects non-string table data', () => {
+    const result = executeToolCall(
+      'insert_table',
+      { rows: 1, columns: 1, data: [[123]] },
+      makeBridge()
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('data');
+  });
+
+  test('returns error when bridge cannot insert', () => {
+    const bridge = makeBridge({ insertTable: () => false });
+    const result = executeToolCall('insert_table', { rows: 2, columns: 2 }, bridge);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Could not insert table');
+  });
+});
+
+describe('insert_image', () => {
+  const tinyPng =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+  test('passes image data through to the bridge', () => {
+    let captured: Parameters<EditorBridge['insertImage']>[0] | undefined;
+    const bridge = makeBridge({
+      insertImage: (opts) => {
+        captured = opts;
+        return true;
+      },
+    });
+    const result = executeToolCall(
+      'insert_image',
+      { src: tinyPng, alt: 'Tiny dot', width: 12, height: 10, paraId: 'p_a3f' },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({
+      src: tinyPng,
+      alt: 'Tiny dot',
+      width: 12,
+      height: 10,
+      paraId: 'p_a3f',
+    });
+  });
+
+  test('requires embeddable data URLs', () => {
+    const result = executeToolCall(
+      'insert_image',
+      { src: 'https://example.com/a.png' },
+      makeBridge()
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('data URL');
+  });
+
+  test('rejects non-string alt text', () => {
+    const result = executeToolCall('insert_image', { src: tinyPng, alt: 123 }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('alt');
+  });
+
+  test('returns error when bridge cannot insert', () => {
+    const bridge = makeBridge({ insertImage: () => false });
+    const result = executeToolCall('insert_image', { src: tinyPng }, bridge);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Could not insert image');
   });
 });
 

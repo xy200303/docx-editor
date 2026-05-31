@@ -222,6 +222,25 @@ export interface SetParagraphStyleOptions {
   styleId: string;
 }
 
+/** Insert a table at the current cursor, or after a paragraph when `paraId` is supplied. */
+export interface InsertTableOptions {
+  rows: number;
+  columns: number;
+  data?: string[][];
+  hasHeader?: boolean;
+  paraId?: string;
+}
+
+/** Insert an inline image at the current cursor, or at the end of `paraId` when supplied. */
+export interface InsertImageOptions {
+  /** Data URL, e.g. `data:image/png;base64,...`, so DOCX export can embed it. */
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  paraId?: string;
+}
+
 /** A single paragraph anchored on a page (returned by `getPage` / `getPages`). */
 export interface PageParagraph {
   paraId: string;

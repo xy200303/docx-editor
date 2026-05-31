@@ -108,6 +108,22 @@ export type DocxEditorRef = EditorRefLike & {
   scrollToPage(pageNumber: number): void;
   /** Scroll to a raw ProseMirror document position. */
   scrollToPosition(pmPos: number): void;
+  /** Insert a table at the current cursor, or after the paragraph identified by `paraId`. */
+  insertTable(options: {
+    rows: number;
+    columns: number;
+    data?: string[][];
+    hasHeader?: boolean;
+    paraId?: string;
+  }): boolean;
+  /** Insert an inline image at the current cursor, or at the end of `paraId`. */
+  insertImage(options: {
+    src: string;
+    alt?: string;
+    width?: number;
+    height?: number;
+    paraId?: string;
+  }): boolean;
   /** Open print preview / browser print. */
   openPrintPreview(): void;
   /** Print the document. */

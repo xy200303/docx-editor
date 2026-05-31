@@ -60,6 +60,8 @@ export interface EditorBridge {
     }): PageContent[];
     getSelection(): SelectionInfo | null;
     getTotalPages(): number;
+    insertImage(options: InsertImageOptions): boolean;
+    insertTable(options: InsertTableOptions): boolean;
     onContentChange(listener: (event: ContentChangeEvent) => void): () => void;
     onSelectionChange(listener: (event: SelectionChangeEvent) => void): () => void;
     proposeChange(options: ProposeChangeOptions): boolean;
@@ -108,6 +110,8 @@ export interface EditorRefLike {
     // (undocumented)
     getSelectionInfo(): SelectionInfo | null;
     getTotalPages(): number;
+    insertImage?(options: InsertImageOptions): boolean;
+    insertTable?(options: InsertTableOptions): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)

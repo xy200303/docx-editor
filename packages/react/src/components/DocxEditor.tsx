@@ -390,6 +390,28 @@ export interface DocxEditorRef {
    */
   setParagraphStyle: (options: { paraId: string; styleId: string }) => boolean;
   /**
+   * Insert a table at the current cursor, or after the paragraph identified
+   * by `paraId`. `data` fills cells row-by-row; missing cells stay empty.
+   */
+  insertTable: (options: {
+    rows: number;
+    columns: number;
+    data?: string[][];
+    hasHeader?: boolean;
+    paraId?: string;
+  }) => boolean;
+  /**
+   * Insert an inline image at the current cursor, or at the end of `paraId`.
+   * `src` should be a data URL when the image must round-trip into DOCX.
+   */
+  insertImage: (options: {
+    src: string;
+    alt?: string;
+    width?: number;
+    height?: number;
+    paraId?: string;
+  }) => boolean;
+  /**
    * Read the contents of a single page. 1-indexed; returns null if the page
    * does not exist. Each paragraph is returned with its stable paraId so the
    * agent can comment on or modify it without an extra round-trip.

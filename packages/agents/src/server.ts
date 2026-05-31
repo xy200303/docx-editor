@@ -49,4 +49,9 @@ export type { EditorBridge } from './bridge';
 
 // Context snapshot — type the request body coming from the client when
 // using `useDocxAgentTools().getContext()`.
-export type { AgentContextSnapshot, SelectionInfo } from './types';
+export type {
+  AgentContextSnapshot,
+  InsertImageOptions,
+  InsertTableOptions,
+  SelectionInfo,
+} from './types';

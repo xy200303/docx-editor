@@ -1,93 +1,71 @@
-# Roast My Doc — agent + editor reference example
+# AI Word Editor — agent + editor reference example
 
 The canonical "plug an agent into the editor" demo. A Next.js app that:
 
 - Mounts `<DocxEditor>` with the controllable right-hand `agentPanel` slot.
-- Wires `useDocxAgentTools` (~10 lines) to an OpenAI-backed `/api/chat` route.
-- Streams the agent reading your DOCX and dropping a (constructive) roast on
-  every paragraph that deserves one — every comment appears live in the editor
-  as the model writes it.
+- Wires `useDocxAgentTools` to an OpenAI-backed `/api/chat` route.
+- Streams live tool calls into the running editor: comments, tracked rewrites,
+  formatting, table insertion, and image insertion.
+- Adds a demo-only `generate_image` server tool so the model can generate a
+  base64 image and then call `insert_image` to place it in the DOCX.
 
 ## Run it
 
 ```bash
-export OPENAI_API_KEY=sk-...
+cp .env.example .env.local
+# Fill OPENAI_API_KEY in .env.local
 bun install
 bun run dev --filter agent-chat-demo
 ```
 
-Open http://localhost:3002, drop in a DOCX, and click **Roast it**.
+Open http://localhost:3002, type into the document or open a DOCX, then ask the
+assistant to rewrite text, insert a table, or generate an image.
 
 ## What the code does
 
-Three pieces — copy them into your own app.
+Three pieces are worth copying into your own app.
 
-**1. Server route (`app/api/chat/route.ts`)** — proxy your LLM call. Imports
-tool schemas from `@eigenpal/docx-editor-agents/server` and passes them to
-OpenAI:
+**1. Server route (`app/api/chat/route.ts`)** — proxy your LLM call. Built-in
+docx tools come from `getAiSdkTools()`. The demo adds a server-executed
+`generate_image` tool because image generation needs your API key:
 
 ```ts
-import { getToolSchemas } from '@eigenpal/docx-editor-agents/server';
-// ...
-const response = await openai.chat.completions.create({
-  model: 'gpt-4o',
-  messages: [...systemMessages, ...messages],
-  tools: getToolSchemas(),
-});
+const tools = {
+  ...getAiSdkTools(),
+  generate_image: tool({
+    inputSchema: jsonSchema({
+      /* prompt schema */
+    }),
+    execute: async ({ prompt }) => {
+      const result = await generateImage({ model: openai.image('gpt-image-1'), prompt });
+      return { src: `data:${result.image.mediaType};base64,${result.image.base64}` };
+    },
+  }),
+};
 ```
 
-**2. React page (`app/page.tsx`)** — the hook owns the bridge, the panel
-holds your chat UI:
+**2. React page (`app/page.tsx`)** — the hook owns the live editor bridge:
 
 ```tsx
 const { executeToolCall, getContext } = useDocxAgentTools({
   editorRef,
-  author: 'Roastmaster',
+  author: 'AI Editor',
 });
-
-<DocxEditor
-  ref={editorRef}
-  documentBuffer={buf}
-  agentPanel={{
-    open: panelOpen,
-    onOpenChange: setPanelOpen,
-    render: () => <YourChatUI />,
-  }}
-/>;
 ```
 
-**3. Tool execution loop** — every time the model emits `tool_calls`, run
-them locally through `executeToolCall` and push the results back into the
-conversation history. The toolkit keeps the editor in sync with the model in
-the same tick.
+**3. Tool execution loop** — client-side editor tools are run locally through
+`executeToolCall` and pushed back into the AI SDK conversation. The server-side
+`generate_image` tool returns a data URL; the model then calls `insert_image`
+with that `src`.
+
+## Common prompts
+
+- "Rewrite the selected text to be clearer."
+- "Insert a 4-row project plan table here."
+- "Generate and insert a simple product roadmap image."
 
 ## Repurposing
 
-Want a redlining agent? A writing assistant? A medical summarizer? Three
-edits:
-
-1. **Swap the system prompt** in `app/api/chat/route.ts`.
-2. **Filter tools** if the agent shouldn't have full access — e.g. for a
-   read-only summarizer, omit `add_comment` / `suggest_change` /
-   `apply_formatting` from `getToolSchemas()`.
-3. **Re-skin the panel** in `app/page.tsx` (or drop in `useChat` from the
-   AI SDK if you want streaming + abort + tool-call inspector for free).
-
-## Why no chat framework here
-
-We use raw `fetch` + plain React state to keep the dependency surface tiny
-and make the BYO pattern obvious. AI SDK's `useChat` works one-for-one — the
-toolkit ships in OpenAI function-calling format, which the AI SDK and most
-LLM providers consume directly:
-
-```tsx
-import { useChat } from '@ai-sdk/react';
-
-const chat = useChat({
-  api: '/api/agent',
-  onToolCall: ({ toolCall }) => executeToolCall(toolCall.toolName, toolCall.args),
-  prepareRequestBody: ({ messages }) => ({ messages, context: getContext() }),
-});
-```
-
-That's it. The toolkit is framework-agnostic.
+Swap the system prompt in `app/api/chat/route.ts`, filter tools with
+`include`/`exclude` in `useDocxAgentTools`, and replace the panel UI with your
+own chat surface. The editor bridge and tool catalog stay the same.

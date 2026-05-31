@@ -16,6 +16,8 @@ import { ComponentProvideOptions } from 'vue';
 import { DefineComponent } from 'vue';
 import { getToolDisplayName } from './tools';
 import { getToolSchemas } from '../../tools';
+import { InsertImageOptions } from './types';
+import { InsertTableOptions } from './types';
 import { MaybeRef } from 'vue';
 import { PublicProps } from 'vue';
 import { Ref } from 'vue';
@@ -252,6 +254,8 @@ export interface EditorRefLike {
     // (undocumented)
     getSelectionInfo(): SelectionInfo | null;
     getTotalPages(): number;
+    insertImage?(options: InsertImageOptions_2): boolean;
+    insertTable?(options: InsertTableOptions_2): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)
@@ -276,6 +280,10 @@ export interface EditorRefLike {
 }
 
 export { getToolDisplayName }
+
+export { InsertImageOptions }
+
+export { InsertTableOptions }
 
 // @public (undocumented)
 export function useAgentBridge(options: UseAgentBridgeOptions): UseAgentBridgeReturn;
