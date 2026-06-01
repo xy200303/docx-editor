@@ -27,6 +27,7 @@ export function sdtPropsToAttrs(props: SdtProperties): Record<string, unknown> {
     dateFormat: props.dateFormat ?? null,
     listItems: props.listItems ? JSON.stringify(props.listItems) : null,
     checked: props.checked ?? null,
+    dataBinding: props.dataBinding ? JSON.stringify(props.dataBinding) : null,
     rawPropertiesXml: props.rawPropertiesXml ?? null,
     rawEndPropertiesXml: props.rawEndPropertiesXml ?? null,
   };
@@ -56,6 +57,13 @@ export function sdtAttrsToProps(attrs: Record<string, unknown>): SdtProperties {
     }
   }
   if (attrs.checked != null) props.checked = attrs.checked as boolean;
+  if (typeof attrs.dataBinding === 'string' && attrs.dataBinding) {
+    try {
+      props.dataBinding = JSON.parse(attrs.dataBinding) as SdtProperties['dataBinding'];
+    } catch {
+      // Malformed cache — drop the projection; raw passthrough still round-trips.
+    }
+  }
   if (attrs.rawPropertiesXml != null) props.rawPropertiesXml = String(attrs.rawPropertiesXml);
   if (attrs.rawEndPropertiesXml != null) {
     props.rawEndPropertiesXml = String(attrs.rawEndPropertiesXml);

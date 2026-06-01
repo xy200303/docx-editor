@@ -105,9 +105,12 @@ export function parseSdtProperties(
           }
           break;
         }
-        case 'showingPlcHdr':
-          props.showingPlaceholder = true;
+        case 'showingPlcHdr': {
+          // CT_OnOff: absent val means true; "0"/"false"/"off" mean false.
+          const v = getAttribute(el, 'w', 'val');
+          props.showingPlaceholder = v == null || !/^(0|false|off)$/i.test(v);
           break;
+        }
         case 'date':
           props.dateFormat = getAttribute(el, 'w', 'fullDate') ?? undefined;
           break;
@@ -121,6 +124,17 @@ export function parseSdtProperties(
             ? getAttribute(checked, 'w14', 'val') === '1' ||
               getAttribute(checked, 'w', 'val') === '1'
             : false;
+          break;
+        }
+        case 'dataBinding': {
+          const binding: NonNullable<SdtProperties['dataBinding']> = {};
+          const xpath = getAttribute(el, 'w', 'xpath');
+          const storeItemID = getAttribute(el, 'w', 'storeItemID');
+          const prefixMappings = getAttribute(el, 'w', 'prefixMappings');
+          if (xpath != null) binding.xpath = xpath;
+          if (storeItemID != null) binding.storeItemID = storeItemID;
+          if (prefixMappings != null) binding.prefixMappings = prefixMappings;
+          props.dataBinding = binding;
           break;
         }
       }

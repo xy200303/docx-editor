@@ -84,7 +84,7 @@ export type {
   TableStructuralChangeInfo,
 } from './content/trackedChange';
 
-export type { SdtType, SdtProperties, InlineSdt, BlockSdt } from './content/sdt';
+export type { SdtType, SdtProperties, SdtDataBinding, InlineSdt, BlockSdt } from './content/sdt';
 
 export type { ParagraphContent, Paragraph } from './content/paragraph';
 

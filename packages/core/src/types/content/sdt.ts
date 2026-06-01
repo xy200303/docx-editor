@@ -40,6 +40,22 @@ export type SdtType =
   | 'unknown';
 
 /**
+ * XML data binding (`w:dataBinding`) — links a content control to a node in a
+ * Custom XML data store. Modeled read-only; the binding round-trips verbatim
+ * via `rawPropertiesXml` (this projection is for inspection, e.g. "which
+ * controls are bound, and to what XPath"). The editor does not resolve or
+ * sync bound values.
+ */
+export interface SdtDataBinding {
+  /** XPath into the bound Custom XML part (`w:xpath`). */
+  xpath?: string;
+  /** Target Custom XML store id (`w:storeItemID`). */
+  storeItemID?: string;
+  /** Namespace prefix mappings used by the XPath (`w:prefixMappings`). */
+  prefixMappings?: string;
+}
+
+/**
  * SDT properties (`w:sdtPr`).
  *
  * The modeled fields are a **read-only projection** for downstream tooling
@@ -74,6 +90,8 @@ export interface SdtProperties {
   listItems?: { displayText: string; value: string }[];
   /** Checkbox checked state (`w14:checkbox`). */
   checked?: boolean;
+  /** XML data binding (`w:dataBinding`), if the control is bound. */
+  dataBinding?: SdtDataBinding;
   /**
    * The original `<w:sdtPr>` serialized verbatim as an XML string, captured
    * at parse time. Replayed unchanged on save so the properties block

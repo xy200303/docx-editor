@@ -117,6 +117,24 @@ export {
 } from './agent/text-utils';
 
 // ============================================================================
+// CONTENT CONTROLS (SDT)
+// ============================================================================
+
+export {
+  findContentControls,
+  findContentControl,
+  getContentControlText,
+  setContentControlContent,
+  removeContentControl,
+  ContentControlNotFoundError,
+  ContentControlLockedError,
+  ContentControlTypeError,
+  ContentControlBoundError,
+  type ContentControlFilter,
+  type ContentControlInfo,
+} from './agent/contentControls';
+
+// ============================================================================
 // PARSER / SERIALIZER
 // ============================================================================
 

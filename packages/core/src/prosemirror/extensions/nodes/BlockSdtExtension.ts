@@ -46,6 +46,8 @@ export const BlockSdtExtension = createNodeExtension({
       listItems: { default: null },
       /** Checkbox checked state */
       checked: { default: null },
+      /** XML data binding (`w:dataBinding`) as JSON string */
+      dataBinding: { default: null },
       /**
        * Captured `<w:sdtPr>` XML (verbatim) for lossless round-trip. Not
        * rendered; carried through so the serializer can replay it.

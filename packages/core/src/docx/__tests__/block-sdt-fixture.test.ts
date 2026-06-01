@@ -73,6 +73,20 @@ describe('comprehensive block-SDT fixture', () => {
     expect(out).toContain('w:sdtEndPr');
   });
 
+  test('a w15:repeatingSection block control parses as a control, not flattened (#622 eval)', async () => {
+    // The exact case an evaluator reported as broken on the published 1.x: a
+    // block-level SDT carrying w15:repeatingSection was flattened to plain
+    // paragraphs. It must now survive as a blockSdt whose own sdtPr keeps the
+    // (unmodeled) repeatingSection element verbatim.
+    const body = parseDocumentBody(await documentXml());
+    const repeat = body.content.find(
+      (b): b is BlockSdt => b.type === 'blockSdt' && b.properties.tag === 'repeat'
+    );
+    expect(repeat).toBeDefined();
+    expect(repeat!.content.length).toBeGreaterThan(0); // wraps real content, not dropped
+    expect(repeat!.properties.rawPropertiesXml).toContain('repeatingSection');
+  });
+
   test('Phase 2 edit cycle (parse → PM → back → serialize) keeps controls + raw sdtPr', async () => {
     const body = parseDocumentBody(await documentXml());
     const pm = toProseDoc({ package: { document: body } } as Document);
