@@ -22,6 +22,7 @@ import type {
   TextBoxBlock,
   PageBreakBlock,
   SectionBreakBlock,
+  SdtGroup,
   ColumnLayout,
   ParagraphAttrs,
 } from '../layout-engine/types';
@@ -692,8 +693,32 @@ export function toFlowBlocks(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
     opts.listSeenNumIds = new Set<string>();
   }
 
-  doc.forEach((node, nodeOffset) => {
-    const pos = offset + nodeOffset;
+  /**
+   * Convert one PM node to flow block(s), appending to `blocks`. Recurses
+   * into block-level SDTs: their children become normal, independently
+   * paginated flow blocks (a control may span pages), each tagged with the
+   * enclosing SDT group(s) via `sdtGroups` so the painter can redraw the
+   * control boundary.
+   */
+  const processNode = (node: PMNode, pos: number, sdtGroups: SdtGroup[]): void => {
+    if (node.type.name === 'blockSdt') {
+      const a = node.attrs as Record<string, unknown>;
+      const group: SdtGroup = {
+        id: `sdt@${pos}`,
+        sdtType: typeof a.sdtType === 'string' ? a.sdtType : 'richText',
+        tag: a.tag != null ? String(a.tag) : undefined,
+        alias: a.alias != null ? String(a.alias) : undefined,
+        lock: a.lock != null ? String(a.lock) : undefined,
+      };
+      const childGroups = [...sdtGroups, group];
+      // Child PM position = SDT node start + 1 (enter the node) + child offset.
+      node.forEach((child, childOffset) => {
+        processNode(child, pos + 1 + childOffset, childGroups);
+      });
+      return;
+    }
+
+    const startLen = blocks.length;
 
     switch (node.type.name) {
       case 'paragraph':
@@ -787,6 +812,16 @@ export function toFlowBlocks(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
         break;
       }
     }
+
+    if (sdtGroups.length > 0) {
+      for (let k = startLen; k < blocks.length; k++) {
+        blocks[k].sdtGroups = sdtGroups;
+      }
+    }
+  };
+
+  doc.forEach((node, nodeOffset) => {
+    processNode(node, offset + nodeOffset, []);
   });
 
   return blocks;

@@ -24,6 +24,7 @@ import type {
 } from '../../../types/document';
 import type { ParagraphAttrs } from '../../schema/nodes';
 import { getLinkKey, getMarksKey, marksToTextFormatting } from './marks';
+import { sdtAttrsToProps } from '../sdtAttrs';
 import {
   createHyperlink,
   addNodeToHyperlink,
@@ -485,19 +486,7 @@ function extractParagraphContent(paragraph: PMNode): ParagraphContent[] {
  * runs.ts would create an import cycle.
  */
 function createInlineSdtFromNode(node: PMNode): InlineSdt {
-  const attrs = node.attrs as Record<string, unknown>;
-
-  const properties: SdtProperties = {
-    sdtType: (attrs.sdtType as SdtProperties['sdtType']) ?? 'richText',
-    alias: (attrs.alias as string) ?? undefined,
-    tag: (attrs.tag as string) ?? undefined,
-    lock: (attrs.lock as SdtProperties['lock']) ?? undefined,
-    placeholder: (attrs.placeholder as string) ?? undefined,
-    showingPlaceholder: (attrs.showingPlaceholder as boolean) ?? undefined,
-    dateFormat: (attrs.dateFormat as string) ?? undefined,
-    listItems: attrs.listItems ? JSON.parse(attrs.listItems as string) : undefined,
-    checked: attrs.checked != null ? (attrs.checked as boolean) : undefined,
-  };
+  const properties: SdtProperties = sdtAttrsToProps(node.attrs as Record<string, unknown>);
 
   // Extract content from the sdt node's children. OOXML allows runs,
   // hyperlinks, simple/complex fields, nested SDTs, and math here — keep

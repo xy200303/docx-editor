@@ -4,6 +4,8 @@
 
 ```ts
 
+import { Node as Node_2 } from 'prosemirror-model';
+
 // @public
 export interface a {
     // (undocumented)
@@ -127,10 +129,7 @@ export const g: {
 };
 
 // @public
-export function h(imageEl: HTMLElement, zoom?: number): {
-    horizontalEmu: number;
-    verticalEmu: number;
-} | undefined;
+export function h(container: HTMLElement, focusedIds: Set<string>): void;
 
 // @public
 export interface HeaderFooterContent {
@@ -169,7 +168,10 @@ export const I: {
 };
 
 // @public
-export function i(options?: P): f;
+export function i(imageEl: HTMLElement, zoom?: number): {
+    horizontalEmu: number;
+    verticalEmu: number;
+} | undefined;
 
 // @public
 export function isFloatingImageRun(run: ImageRun): boolean;
@@ -178,10 +180,10 @@ export function isFloatingImageRun(run: ImageRun): boolean;
 export function isTextWrappingFloatingImageRun(run: ImageRun): boolean;
 
 // @public
-export function j(wrapType: WrapType, cssFloat?: ImageAttrs['cssFloat'] | null): ImageLayoutTarget | null;
+export function j(options?: P): f;
 
 // @public
-export function k(target: EventTarget | null): HTMLElement | null;
+export function k(wrapType: WrapType, cssFloat?: ImageAttrs['cssFloat'] | null): ImageLayoutTarget | null;
 
 // @public
 export const L: {
@@ -194,16 +196,16 @@ export const L: {
 };
 
 // @public
-export function l(target: EventTarget | null): c | null;
+export function l(doc: Node_2, from: number, to: number): Set<string>;
 
 // @public
-export function m(_option: e, _currentWrapType: WrapType): boolean;
+export function m(target: EventTarget | null): HTMLElement | null;
 
 // @public
-export function n(fragment: ImageFragment, block: ImageBlock, _measure: ImageMeasure, _context: RenderContext, options?: RenderImageFragmentOptions): HTMLElement;
+export function n(target: EventTarget | null): c | null;
 
 // @public
-export function o(block: ParagraphBlock, line: MeasuredLine, alignment: 'left' | 'center' | 'right' | 'justify' | undefined, doc: Document, options?: RenderLineOptions): HTMLElement;
+export function o(_option: e, _currentWrapType: WrapType): boolean;
 
 // @public
 export interface P {
@@ -215,7 +217,7 @@ export interface P {
 }
 
 // @public
-export function p(fragment: ParagraphFragment, block: ParagraphBlock, measure: ParagraphMeasure, context: RenderContext, options?: RenderParagraphOptions): HTMLElement;
+export function p(fragment: ImageFragment, block: ImageBlock, _measure: ImageMeasure, _context: RenderContext, options?: RenderImageFragmentOptions): HTMLElement;
 
 // @public
 export const PAGE_CLASS_NAMES: {
@@ -226,7 +228,7 @@ export const PAGE_CLASS_NAMES: {
 };
 
 // @public
-export function q(fragment: TableFragment, block: TableBlock, measure: TableMeasure, context: RenderContext, options?: RenderTableFragmentOptions): HTMLElement;
+export function q(block: ParagraphBlock, line: MeasuredLine, alignment: 'left' | 'center' | 'right' | 'justify' | undefined, doc: Document, options?: RenderLineOptions): HTMLElement;
 
 // @public
 export function r(fragment: Fragment, context: RenderContext, options?: RenderFragmentOptions): HTMLElement;
@@ -293,7 +295,7 @@ export function resolveHeaderFooterFloatingTablePosition(floating: NonNullable<T
 };
 
 // @public
-export function s(fragment: TextBoxFragment, block: TextBoxBlock, measure: TextBoxMeasure, context: RenderContext, options?: RenderTextBoxFragmentOptions): HTMLElement;
+export function s(fragment: ParagraphFragment, block: ParagraphBlock, measure: ParagraphMeasure, context: RenderContext, options?: RenderParagraphOptions): HTMLElement;
 
 // @public
 export const T: {
@@ -308,9 +310,15 @@ export const T: {
 };
 
 // @public
-export function t(block: ParagraphBlock, line: MeasuredLine): Run[];
+export function t(fragment: TableFragment, block: TableBlock, measure: TableMeasure, context: RenderContext, options?: RenderTableFragmentOptions): HTMLElement;
 
 // @public
-export function u(value: string): ImageLayoutTarget | undefined;
+export function u(fragment: TextBoxFragment, block: TextBoxBlock, measure: TextBoxMeasure, context: RenderContext, options?: RenderTextBoxFragmentOptions): HTMLElement;
+
+// @public
+export function v(block: ParagraphBlock, line: MeasuredLine): Run[];
+
+// @public
+export function w(value: string): ImageLayoutTarget | undefined;
 
 ```

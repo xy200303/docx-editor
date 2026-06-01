@@ -357,6 +357,8 @@ export type ParagraphAttrs = {
  * A paragraph block containing runs.
  */
 export type ParagraphBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'paragraph';
   id: BlockId;
   runs: Run[];
@@ -448,6 +450,8 @@ export type FloatingTablePosition = {
  * A table block containing rows.
  */
 export type TableBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'table';
   id: BlockId;
   rows: TableRow[];
@@ -470,6 +474,8 @@ export type TableBlock = {
  * An anchored/floating image block.
  */
 export type ImageBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'image';
   id: BlockId;
   src: string;
@@ -494,6 +500,8 @@ export type ImageBlock = {
  * Section break block defining page layout changes.
  */
 export type SectionBreakBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'sectionBreak';
   id: BlockId;
   type?: 'continuous' | 'nextPage' | 'evenPage' | 'oddPage';
@@ -507,6 +515,8 @@ export type SectionBreakBlock = {
  * Explicit page break block.
  */
 export type PageBreakBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'pageBreak';
   id: BlockId;
   pmStart?: number;
@@ -517,6 +527,8 @@ export type PageBreakBlock = {
  * Column break block.
  */
 export type ColumnBreakBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'columnBreak';
   id: BlockId;
   pmStart?: number;
@@ -533,6 +545,8 @@ export const DEFAULT_TEXTBOX_WIDTH = 200;
  * Text box block — positioned container with paragraph content.
  */
 export type TextBoxBlock = {
+  /** Enclosing block-SDT group memberships (outermost first), if any. */
+  sdtGroups?: SdtGroup[];
   kind: 'textBox';
   id: BlockId;
   /** Width in pixels */
@@ -571,6 +585,20 @@ export type TextBoxBlock = {
   pmStart?: number;
   pmEnd?: number;
 };
+
+/**
+ * Identity of a block-level Structured Document Tag (content control) that
+ * encloses a run of flow blocks. Block SDTs are flattened into their child
+ * flow blocks for pagination (a control may span pages); each child carries
+ * its enclosing group(s) so the painter can redraw the control boundary.
+ */
+export interface SdtGroup {
+  id: string; // stable per-document id (derived from the PM node position)
+  sdtType: string; // control type (richText, dropDownList, ...)
+  tag?: string; // w:tag
+  alias?: string; // w:alias
+  lock?: string; // lock mode
+}
 
 /**
  * Union of every block kind the layout engine knows about.

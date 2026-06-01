@@ -25,11 +25,13 @@ import type {
   DocumentBody,
   Paragraph,
   Run,
-  Table,
   BreakContent,
+  BlockContent,
+  BlockSdt,
 } from '../../types/document';
 import type { TextBoxAttrs } from '../extensions/nodes/TextBoxExtension';
 import { shouldExportTextBoxInsideFollowingParagraph } from './textBoxAnchors';
+import { sdtAttrsToProps } from './sdtAttrs';
 import { convertPMParagraph } from './fromProseDoc/paragraph';
 import { convertPMTable } from './fromProseDoc/tables';
 import { convertPMTextBox, convertPMTextBoxRun } from './fromProseDoc/textbox';
@@ -68,10 +70,11 @@ export function fromProseDoc(pmDoc: PMNode, baseDocument?: Document): Document {
 }
 
 /**
- * Extract blocks (paragraphs and tables) from ProseMirror document
+ * Extract blocks (paragraphs, tables, and block-level SDTs) from a
+ * ProseMirror document or block-containing node.
  */
-function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
-  const blocks: (Paragraph | Table)[] = [];
+function extractBlocks(pmDoc: PMNode): BlockContent[] {
+  const blocks: BlockContent[] = [];
   let pendingAnchoredTextBoxRuns: Run[] = [];
 
   const flushPendingTextBoxes = (): void => {
@@ -95,6 +98,9 @@ function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
     } else if (node.type.name === 'table') {
       flushPendingTextBoxes();
       blocks.push(convertPMTable(node));
+    } else if (node.type.name === 'blockSdt') {
+      flushPendingTextBoxes();
+      blocks.push(convertPMBlockSdt(node));
     } else if (node.type.name === 'textBox') {
       const attrs = node.attrs as TextBoxAttrs;
       if (shouldExportTextBoxInsideFollowingParagraph(attrs)) {
@@ -113,6 +119,19 @@ function extractBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
   flushPendingTextBoxes();
 
   return blocks;
+}
+
+/**
+ * Reconstruct a {@link BlockSdt} model node from a `blockSdt` PM node:
+ * project the attrs back to {@link SdtProperties} (the captured raw `sdtPr`
+ * rides along for lossless serialization) and recurse into the children.
+ */
+function convertPMBlockSdt(node: PMNode): BlockSdt {
+  return {
+    type: 'blockSdt',
+    properties: sdtAttrsToProps(node.attrs as Record<string, unknown>),
+    content: extractBlocks(node),
+  };
 }
 
 /**
@@ -139,6 +158,6 @@ export function updateDocumentContent(originalDocument: Document, pmDoc: PMNode)
  * Convert a ProseMirror document back to an array of Paragraph/Table blocks.
  * Used for converting edited header/footer PM content back to the document model.
  */
-export function proseDocToBlocks(pmDoc: PMNode): (Paragraph | Table)[] {
+export function proseDocToBlocks(pmDoc: PMNode): BlockContent[] {
   return extractBlocks(pmDoc);
 }

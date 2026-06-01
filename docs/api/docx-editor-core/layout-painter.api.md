@@ -4,6 +4,11 @@
 
 ```ts
 
+import { Node as Node_2 } from 'prosemirror-model';
+
+// @public
+export function applySdtFocus(container: HTMLElement, focusedIds: Set<string>): void;
+
 // @public
 export type BlockLookup = Map<string, BlockLookupEntry>;
 
@@ -28,6 +33,9 @@ export function createPainter(options?: PainterOptions): LayoutPainter;
 
 // @public
 export function deriveLayoutChoice(wrapType: WrapType, cssFloat?: ImageAttrs['cssFloat'] | null): ImageLayoutTarget | null;
+
+// @public
+export function enclosingSdtGroupIds(doc: Node_2, from: number, to: number): Set<string>;
 
 // @public
 export function findImageElement(target: EventTarget | null): HTMLElement | null;

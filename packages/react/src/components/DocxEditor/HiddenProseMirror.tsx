@@ -29,7 +29,7 @@ import {
 import { CellSelection } from 'prosemirror-tables';
 import { EditorView, type DirectEditorProps } from 'prosemirror-view';
 import { undo, redo } from 'prosemirror-history';
-import { schema } from '@eigenpal/docx-editor-core/prosemirror';
+import { schema, createDocumentStylesPlugin } from '@eigenpal/docx-editor-core/prosemirror';
 import { toProseDoc, createEmptyDoc } from '@eigenpal/docx-editor-core/prosemirror/conversion';
 import { fromProseDoc } from '@eigenpal/docx-editor-core/prosemirror/conversion';
 import type { ExtensionManager } from '@eigenpal/docx-editor-core/prosemirror/extensions';
@@ -176,11 +176,20 @@ function createInitialState(
   externalPlugins: Plugin[] = []
 ): EditorState {
   const activeSchema = manager?.getSchema() ?? schema;
-  const doc = document ? toProseDoc(document, { styles: styles ?? undefined }) : createEmptyDoc();
+  const effectiveStyles = styles ?? document?.package?.styles;
+  const doc = document ? toProseDoc(document, { styles: effectiveStyles }) : createEmptyDoc();
+
+  // Expose the document's styles to style-aware commands (e.g. the Enter
+  // handler's `w:next` switch from heading to body text).
+  const styleResolverPlugin = createDocumentStylesPlugin(effectiveStyles);
 
   // External plugins go first so they can intercept before extension keymaps
   // (e.g. suggestion mode must handle Backspace/Delete before deleteSelection)
-  const plugins: Plugin[] = [...externalPlugins, ...(manager?.getPlugins() ?? [])];
+  const plugins: Plugin[] = [
+    ...externalPlugins,
+    ...(manager?.getPlugins() ?? []),
+    styleResolverPlugin,
+  ];
 
   return EditorState.create({
     doc,

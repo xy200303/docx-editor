@@ -19,11 +19,53 @@
 
 import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema';
-import type { Document, Paragraph, Table, StyleDefinitions, Theme } from '../../types/document';
-import { createStyleResolver } from '../styles';
+import type { Document, BlockContent, StyleDefinitions, Theme } from '../../types/document';
+import { createStyleResolver, type StyleResolver } from '../styles';
 import { paragraphHasPageBreak } from './toProseDoc/paragraph';
 import { convertTable } from './toProseDoc/tables';
 import { convertParagraphWithTextBoxes } from './toProseDoc/textbox';
+import { sdtPropsToAttrs } from './sdtAttrs';
+
+/**
+ * Convert a list of block-content model nodes to PM nodes.
+ *
+ * Block-level SDTs become real `blockSdt` PM nodes wrapping their
+ * (recursively converted) children, so content controls survive the edit
+ * cycle instead of being flattened. A control that wraps nothing gets a
+ * single empty paragraph to satisfy the `block+` content model.
+ *
+ * `includePageBreaks` mirrors the body-only behavior of emitting a
+ * `pageBreak` node after a paragraph carrying a rendered page break;
+ * header/footer content passes `false`.
+ */
+function convertBlocksToNodes(
+  blocks: BlockContent[],
+  styleResolver: StyleResolver | null,
+  theme: Theme | null,
+  includePageBreaks: boolean
+): PMNode[] {
+  const nodes: PMNode[] = [];
+  for (const block of blocks) {
+    if (block.type === 'paragraph') {
+      nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
+      if (includePageBreaks && paragraphHasPageBreak(block)) {
+        nodes.push(schema.node('pageBreak'));
+      }
+    } else if (block.type === 'table') {
+      nodes.push(convertTable(block, styleResolver, theme));
+    } else if (block.type === 'blockSdt') {
+      const childNodes = convertBlocksToNodes(
+        block.content,
+        styleResolver,
+        theme,
+        includePageBreaks
+      );
+      const inner = childNodes.length > 0 ? childNodes : [schema.node('paragraph', {}, [])];
+      nodes.push(schema.node('blockSdt', sdtPropsToAttrs(block.properties), inner));
+    }
+  }
+  return nodes;
+}
 
 /**
  * Options for document conversion
@@ -48,29 +90,29 @@ export interface ToProseDocOptions {
  * @param options - Conversion options including style definitions
  */
 export function toProseDoc(document: Document, options?: ToProseDocOptions): PMNode {
-  const paragraphs = document.package.document.content;
-  const nodes: PMNode[] = [];
   const theme = document.package.theme ?? null;
 
   // Create style resolver if styles are provided
   const styleResolver = options?.styles ? createStyleResolver(options.styles) : null;
 
-  for (const block of paragraphs) {
-    if (block.type === 'paragraph') {
-      // Convert paragraph and extract text boxes as sibling nodes
-      nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
-      // If any run in this paragraph contains a page break, emit a pageBreak node after
-      if (paragraphHasPageBreak(block)) {
-        nodes.push(schema.node('pageBreak'));
-      }
-    } else if (block.type === 'table') {
-      const pmTable = convertTable(block, styleResolver, theme);
-      nodes.push(pmTable);
-    }
+  const nodes = convertBlocksToNodes(
+    document.package.document.content,
+    styleResolver,
+    theme,
+    /* includePageBreaks */ true
+  );
+
+  // Ensure we have at least one paragraph.
+  if (nodes.length === 0) {
+    nodes.push(schema.node('paragraph', {}, []));
   }
 
-  // Ensure we have at least one paragraph
-  if (nodes.length === 0) {
+  // Guarantee a text-cursor position after a trailing block-level content
+  // control. A `blockSdt` is `isolating`, so if it is the doc's last node the
+  // caret cannot land after it (no gapcursor) and the user can never type
+  // outside the control — the common "whole body wrapped in an SDT" case.
+  // Word likewise always keeps a body-final paragraph after such content.
+  if (nodes[nodes.length - 1]?.type.name === 'blockSdt') {
     nodes.push(schema.node('paragraph', {}, []));
   }
 
@@ -89,20 +131,13 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
  * fills in HF tables fall back to the unresolved theme key.
  */
 export function headerFooterToProseDoc(
-  content: Array<Paragraph | Table>,
+  content: BlockContent[],
   options?: ToProseDocOptions & { theme?: Theme | null }
 ): PMNode {
-  const nodes: PMNode[] = [];
   const styleResolver = options?.styles ? createStyleResolver(options.styles) : null;
   const theme = options?.theme ?? null;
 
-  for (const block of content) {
-    if (block.type === 'paragraph') {
-      nodes.push(...convertParagraphWithTextBoxes(block, styleResolver));
-    } else if (block.type === 'table') {
-      nodes.push(convertTable(block, styleResolver, theme));
-    }
-  }
+  const nodes = convertBlocksToNodes(content, styleResolver, theme, /* includePageBreaks */ false);
 
   if (nodes.length === 0) {
     nodes.push(schema.node('paragraph', {}, []));
@@ -121,7 +156,7 @@ export function headerFooterToProseDoc(
  * tables, images, and fields nested inside a footnote.
  */
 export function footnoteToProseDoc(
-  content: Array<Paragraph | Table>,
+  content: BlockContent[],
   options?: ToProseDocOptions & { theme?: Theme | null }
 ): PMNode {
   return headerFooterToProseDoc(content, options);

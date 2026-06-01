@@ -23,5 +23,10 @@ export {
   setSuggestionMode,
   isSuggestionModeActive,
 } from './suggestionMode';
+export {
+  documentStylesKey,
+  createDocumentStylesPlugin,
+  getDocumentStyleResolver,
+} from './documentStyles';
 export { makeRevisionInfo } from './revisionIds';
 export type { RevisionInfo } from '../../types/content/trackedChange';

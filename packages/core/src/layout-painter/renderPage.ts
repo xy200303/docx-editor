@@ -30,7 +30,9 @@ import type {
   TextBoxBlock,
   TextBoxMeasure,
   TextBoxFragment,
+  SdtGroup,
 } from '../layout-engine/types';
+import { renderSdtBoundaryBoxes } from './sdtBoundary';
 import { renderFragment } from './renderFragment';
 import { renderParagraphFragment } from './renderParagraph';
 import { renderTableFragment } from './renderTable';
@@ -607,6 +609,32 @@ export function renderPage(
   let prevParagraphBorders: ParagraphBorders | undefined;
   const renderedInlineImageKeysByBlock = new Map<string, Set<string>>();
 
+  // Block-level Structured Document Tag (content control) membership for a
+  // fragment, derived from its block's `sdtGroups` (set in toFlowBlocks).
+  const sdtGroupsOf = (frag: Fragment): SdtGroup[] => {
+    if (!options.blockLookup || !frag.blockId) return [];
+    return options.blockLookup.get(String(frag.blockId))?.block.sdtGroups ?? [];
+  };
+
+  /**
+   * Stamp a painted fragment with its enclosing content-control identity, so
+   * selection / addressing can find the region by tag/alias. The innermost
+   * group drives the dataset attrs; the visible boundary box is drawn
+   * separately (see `renderSdtBoundaryBoxes`) so a multi-block control reads
+   * as one rounded rectangle rather than per-fragment rules.
+   */
+  const stampSdtFragment = (el: HTMLElement, groups: SdtGroup[]): void => {
+    if (groups.length === 0) return;
+    const innermost = groups[groups.length - 1];
+    el.classList.add('layout-block-sdt');
+    el.dataset.sdtGroupId = innermost.id;
+    el.dataset.sdtType = innermost.sdtType;
+    el.dataset.sdtDepth = String(groups.length);
+    if (innermost.tag != null) el.dataset.sdtTag = innermost.tag;
+    if (innermost.alias != null) el.dataset.sdtAlias = innermost.alias;
+    if (innermost.lock != null) el.dataset.sdtLock = innermost.lock;
+  };
+
   for (let i = 0; i < page.fragments.length; i++) {
     const fragment = page.fragments[i];
     let fragmentEl: HTMLElement;
@@ -708,8 +736,19 @@ export function renderPage(
     }
 
     applyFragmentStyles(fragmentEl, fragment, { left: page.margins.left, top: page.margins.top });
+
+    // Tag fragments enclosed by a block-level content control so selection /
+    // addressing can find the region; the boundary box is drawn afterward.
+    stampSdtFragment(fragmentEl, sdtGroupsOf(fragment));
+
     contentEl.appendChild(fragmentEl);
   }
+
+  // Draw one boundary box per block-level content control on this page,
+  // spanning the vertical extent of its fragments at content width — so a
+  // multi-block (or nested) control reads as a single rounded rectangle with
+  // a corner label, matching Word. Nested controls each get their own box.
+  renderSdtBoundaryBoxes(page, contentEl, contentWidth, sdtGroupsOf, doc);
 
   // Render in-front floating images after text fragments so wrapNone and
   // wrapping images paint above body text without participating in flow.

@@ -21,6 +21,9 @@ import type { ExtensionRuntime, ExtensionContext } from '../types';
 import type { Command, Transaction } from 'prosemirror-state';
 import type { TextFormatting } from '../../../types/document';
 import { mergeFontFamily } from '../../../utils/fontFamilyMerge';
+import type { StyleResolver } from '../../styles/styleResolver';
+import { paragraphAttrsFromResolvedStyle } from '../../styles/resolvedStyleAttrs';
+import { getDocumentStyleResolver } from '../../plugins/documentStyles';
 
 function chainCommands(...commands: Command[]): Command {
   return (state, dispatch, view) => {
@@ -94,12 +97,40 @@ const INHERITED_PARA_ATTRS = [
 export const STYLE_MARK_NAMES = new Set(['fontFamily', 'fontSize', 'textColor']);
 
 /**
+ * Replace an empty new paragraph's style with `nextStyleId`, projecting that
+ * style's resolved paragraph + run formatting onto the node. Stored marks are
+ * set from the next style's run formatting so typed text matches (and so the
+ * previous paragraph's marks — e.g. a heading's bold — don't carry over).
+ */
+function applyNextParagraphStyle(
+  tr: Transaction,
+  pos: number,
+  newPara: PMNode,
+  nextStyleId: string,
+  resolver: StyleResolver,
+  schema: Schema
+): void {
+  const resolved = resolver.resolveParagraphStyle(nextStyleId);
+  tr.setNodeMarkup(pos, undefined, {
+    ...newPara.attrs,
+    styleId: nextStyleId,
+    ...paragraphAttrsFromResolvedStyle(resolved),
+    borders: null,
+  });
+  // setStoredMarks MUST come after setNodeMarkup — every step clears them.
+  tr.setStoredMarks(
+    resolved.runFormatting ? textFormattingToMarks(resolved.runFormatting, schema) : []
+  );
+}
+
+/**
  * Apply post-split paragraph inheritance to `tr`. Assumes the split already
  * happened and the caller's intent is that `tr.selection.$from` resolves
- * into the NEW (second) paragraph. Copies style-related attrs from
- * `sourcePara`, clears borders, and — for an empty new paragraph — syncs
- * defaultTextFormatting and `setStoredMarks` so typed text inherits font /
- * size / color from the source.
+ * into the NEW (second) paragraph. When the source style has a `w:next`,
+ * switches the empty new paragraph to it (e.g. heading → body text);
+ * otherwise copies style-related attrs from `sourcePara`, clears borders,
+ * and — for an empty new paragraph — syncs defaultTextFormatting and
+ * `setStoredMarks` so typed text inherits font / size / color from the source.
  *
  * Shared by the plain Enter handler and the suggesting-mode Enter handler.
  */
@@ -107,11 +138,24 @@ export function applyPostSplitInheritance(
   tr: Transaction,
   sourcePara: PMNode | null,
   styleMarks: readonly Mark[],
-  schema: Schema
+  schema: Schema,
+  resolver?: StyleResolver | null
 ): void {
   const { $from } = tr.selection;
   const newPara = $from.parent;
   if (newPara.type.name !== 'paragraph') return;
+
+  // Word's `w:next`: pressing Enter at the end of a paragraph (the new
+  // paragraph is empty) switches it to the style's follow-on style — e.g.
+  // a heading drops to body text. Only applies to an empty trailing
+  // paragraph; splitting mid-paragraph keeps the style on both halves.
+  if (resolver && sourcePara && newPara.textContent.length === 0) {
+    const nextStyleId = resolver.getNextStyleId(sourcePara.attrs.styleId as string | null);
+    if (nextStyleId) {
+      applyNextParagraphStyle(tr, $from.before(), newPara, nextStyleId, resolver, schema);
+      return;
+    }
+  }
 
   const newAttrs: Record<string, unknown> = { ...newPara.attrs };
   let attrsChanged = false;
@@ -202,7 +246,13 @@ const splitBlockClearBorders: Command = (state, dispatch, view) => {
 
   if (dispatch && splitTr !== null) {
     const tr = splitTr as Transaction;
-    applyPostSplitInheritance(tr, sourcePara, styleMarks, state.schema);
+    applyPostSplitInheritance(
+      tr,
+      sourcePara,
+      styleMarks,
+      state.schema,
+      getDocumentStyleResolver(state)
+    );
     dispatch(tr.scrollIntoView());
   }
 

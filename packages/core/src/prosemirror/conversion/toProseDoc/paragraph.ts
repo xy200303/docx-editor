@@ -28,6 +28,7 @@ import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
 import type { StyleResolver } from '../../styles';
 import { resolveTextFormatting } from './marks';
 import { convertRun, convertHyperlink, convertField, convertMathEquation } from './runs';
+import { sdtPropsToAttrs } from '../sdtAttrs';
 
 /**
  * Convert a Paragraph to a ProseMirror paragraph node
@@ -396,17 +397,7 @@ function convertInlineSdt(
 
   return schema.node(
     'sdt',
-    {
-      sdtType: props.sdtType,
-      alias: props.alias ?? null,
-      tag: props.tag ?? null,
-      lock: props.lock ?? null,
-      placeholder: props.placeholder ?? null,
-      showingPlaceholder: props.showingPlaceholder ?? false,
-      dateFormat: props.dateFormat ?? null,
-      listItems: props.listItems ? JSON.stringify(props.listItems) : null,
-      checked: props.checked ?? null,
-    },
+    sdtPropsToAttrs(props),
     inlineNodes.length > 0 ? inlineNodes : undefined
   );
 }

@@ -32,6 +32,7 @@ import { singletonManager } from '@eigenpal/docx-editor-core/prosemirror/schema'
 import {
   createSuggestionModePlugin,
   setSuggestionMode,
+  createDocumentStylesPlugin,
 } from '@eigenpal/docx-editor-core/prosemirror/plugins';
 import {
   ExtensionManager,
@@ -76,6 +77,7 @@ import type {
   TextBoxBlock,
 } from '@eigenpal/docx-editor-core/layout-engine/types';
 import type { BlockLookup, HeaderFooterContent } from '@eigenpal/docx-editor-core/layout-painter';
+import { enclosingSdtGroupIds, applySdtFocus } from '@eigenpal/docx-editor-core/layout-painter';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
 import type { LayoutSelectionGate } from '@eigenpal/docx-editor-core/prosemirror';
 
@@ -486,6 +488,12 @@ export function useDocxEditor(options: UseDocxEditorOptions): UseDocxEditorRetur
       for (const child of Array.from(container.children)) {
         (child as HTMLElement).style.flexShrink = '0';
       }
+      // Keep a content control's boundary visible while the caret is inside it
+      // (Word-style focus); re-applied here so it survives every re-paint.
+      applySdtFocus(
+        container,
+        enclosingSdtGroupIds(state.doc, state.selection.from, state.selection.to)
+      );
     } catch (err) {
       console.error('[useDocxEditor] Layout pipeline error:', err);
       onError?.(err instanceof Error ? err : new Error(String(err)));
@@ -502,17 +510,25 @@ export function useDocxEditor(options: UseDocxEditorOptions): UseDocxEditorRetur
     const host = hiddenContainer.value;
     if (!host) return;
 
+    const docStyles = document.value?.package?.styles;
     const doc = document.value
-      ? toProseDoc(document.value, {
-          styles: document.value.package?.styles ?? undefined,
-        })
+      ? toProseDoc(document.value, { styles: docStyles ?? undefined })
       : createEmptyDoc();
 
     // Suggestion-mode plugin is registered inactive; `setSuggestionMode()`
     // toggles its `active` state via PluginKey meta. Mirrors React's
     // mount-once-and-toggle pattern (DocxEditor.tsx createSuggestionModePlugin).
     const suggestionPlugin = createSuggestionModePlugin(false);
-    const plugins: Plugin[] = [suggestionPlugin, ...externalPlugins, ...(mgr.getPlugins() ?? [])];
+    // Expose the document's styles to style-aware commands (e.g. the Enter
+    // handler's `w:next` switch from heading to body text). Mirrors React's
+    // HiddenProseMirror createInitialState.
+    const styleResolverPlugin = createDocumentStylesPlugin(docStyles);
+    const plugins: Plugin[] = [
+      suggestionPlugin,
+      ...externalPlugins,
+      ...(mgr.getPlugins() ?? []),
+      styleResolverPlugin,
+    ];
 
     const state = EditorState.create({
       doc,
@@ -550,6 +566,18 @@ export function useDocxEditor(options: UseDocxEditorOptions): UseDocxEditorRetur
         // Notify about selection changes (for highlight overlay)
         syncCoordinator?.requestRender();
         onSelectionUpdate?.();
+
+        // Selection-only moves don't relayout, so update content-control focus
+        // here too; relayouts re-apply it from runLayoutPipeline.
+        if (!transaction.docChanged) {
+          const pagesEl = pagesContainer.value;
+          if (pagesEl) {
+            applySdtFocus(
+              pagesEl,
+              enclosingSdtGroupIds(newState.doc, newState.selection.from, newState.selection.to)
+            );
+          }
+        }
       },
     });
 
@@ -696,10 +724,13 @@ export function useDocxEditor(options: UseDocxEditorOptions): UseDocxEditorRetur
         theme,
         defaultTabStopTwips,
       });
+      // Header/footer paragraphs share the document's style table, so they get
+      // the same style-aware behavior (e.g. Enter after a heading → body text).
+      const hfStyleResolverPlugin = createDocumentStylesPlugin(styles);
       const state = EditorState.create({
         doc: pmDoc,
         schema,
-        plugins: mgr.getPlugins(),
+        plugins: [...mgr.getPlugins(), hfStyleResolverPlugin],
       });
       const slotKind = kind;
       const view: EditorView = new EditorView(node, {

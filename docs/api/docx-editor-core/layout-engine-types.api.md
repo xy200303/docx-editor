@@ -35,6 +35,7 @@ export type CellBorderSpec = {
 
 // @public
 export type ColumnBreakBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'columnBreak';
     id: BlockId;
     pmStart?: number;
@@ -147,6 +148,7 @@ export type HyperlinkInfo = {
 
 // @public
 export type ImageBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'image';
     id: BlockId;
     src: string;
@@ -329,6 +331,7 @@ export type Page = {
 
 // @public
 export type PageBreakBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'pageBreak';
     id: BlockId;
     pmStart?: number;
@@ -386,6 +389,7 @@ export type ParagraphAttrs = {
 
 // @public
 export type ParagraphBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'paragraph';
     id: BlockId;
     runs: Run[];
@@ -482,7 +486,22 @@ export type RunFormatting = {
 };
 
 // @public
+export interface SdtGroup {
+    // (undocumented)
+    alias?: string;
+    // (undocumented)
+    id: string;
+    // (undocumented)
+    lock?: string;
+    // (undocumented)
+    sdtType: string;
+    // (undocumented)
+    tag?: string;
+}
+
+// @public
 export type SectionBreakBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'sectionBreak';
     id: BlockId;
     type?: 'continuous' | 'nextPage' | 'evenPage' | 'oddPage';
@@ -505,6 +524,7 @@ export type TabAlignment = 'start' | 'end' | 'center' | 'decimal' | 'bar' | 'cle
 
 // @public
 export type TableBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'table';
     id: BlockId;
     rows: TableRow[];
@@ -604,6 +624,7 @@ export type TabStop = {
 
 // @public
 export type TextBoxBlock = {
+    sdtGroups?: SdtGroup[];
     kind: 'textBox';
     id: BlockId;
     width: number;

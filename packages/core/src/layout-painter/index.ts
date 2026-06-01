@@ -65,6 +65,10 @@ export {
 export type { RenderPagesUpdateKind };
 export type { HeaderFooterContent, RenderPageOptions, FootnoteRenderItem } from './renderPage';
 
+// Block-level content-control (SDT) focus chrome — keep the boundary box and
+// label visible while the caret is inside the control, shared by both adapters.
+export { enclosingSdtGroupIds, applySdtFocus } from './sdtBoundary';
+
 // Framework-agnostic image layout helpers shared by React + Vue adapters.
 export {
   LAYOUT_IMAGE_CLASSES,

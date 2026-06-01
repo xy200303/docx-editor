@@ -10,6 +10,7 @@ import {
   applyPostSplitInheritance,
   STYLE_MARK_NAMES,
 } from '../../../extensions/features/BaseKeymapExtension';
+import { getDocumentStyleResolver } from '../../documentStyles';
 import { findAdjacentParagraphMark } from '../adjacency';
 import { makeMarkAttrs } from '../markAttrs';
 import { suggestionModeKey, SUGGESTION_META, type MarkAttrs } from '../state';
@@ -89,7 +90,13 @@ export function handleSuggestionEnter(
   // Shared with plain Enter: inherits style attrs, clears borders, and
   // (for an empty new paragraph) sets stored marks so typed text picks up
   // the source paragraph's font / size / color.
-  applyPostSplitInheritance(tr, sourcePara, styleMarks, state.schema);
+  applyPostSplitInheritance(
+    tr,
+    sourcePara,
+    styleMarks,
+    state.schema,
+    getDocumentStyleResolver(state)
+  );
 
   dispatch(tr.scrollIntoView());
   return true;
