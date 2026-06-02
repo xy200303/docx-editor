@@ -24,6 +24,7 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     insertImage: () => true,
     getContentControls: () => [],
     setContentControl: () => true,
+    setContentControlValue: () => true,
     removeContentControl: () => true,
     scrollToContentControl: () => true,
     getPage: () => null,
@@ -69,7 +70,7 @@ describe('McpServer.handle — tools/list', () => {
     const reply = server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     const result = (reply as JsonRpcSuccess).result as McpToolsListResult;
     expect(result.tools).toBeDefined();
-    expect(result.tools.length).toBe(20);
+    expect(result.tools.length).toBe(21);
     for (const tool of result.tools) {
       expect(typeof tool.name).toBe('string');
       expect(typeof tool.description).toBe('string');
@@ -96,6 +97,7 @@ describe('McpServer.handle — tools/list', () => {
         'resolve_comment',
         'scroll',
         'set_content_control',
+        'set_content_control_value',
         'set_paragraph_style',
         'suggest_change',
       ].sort()
@@ -260,6 +262,10 @@ describe('McpServer + bridge contract — every tool round-trips', () => {
       { name: 'insert_text', args: { text: 't', paraId: 'p' } },
       { name: 'replace_text', args: { paraId: 'p', search: 'a', replaceWith: 'b' } },
       { name: 'set_content_control', args: { tag: 'customer_name', text: 'Acme' } },
+      {
+        name: 'set_content_control_value',
+        args: { tag: 'status', kind: 'dropdown', value: 'Approved' },
+      },
       { name: 'insert_table', args: { rows: 1, columns: 1 } },
       { name: 'insert_image', args: { src: 'data:image/png;base64,AA==', width: 1, height: 1 } },
       { name: 'apply_formatting', args: { paraId: 'p', marks: { bold: true } } },

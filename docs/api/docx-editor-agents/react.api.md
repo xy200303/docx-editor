@@ -191,6 +191,18 @@ export interface ContentControlInfo extends ContentControlFilter {
 }
 
 // @public
+export type ContentControlValue = {
+    kind: 'dropdown';
+    value: string;
+} | {
+    kind: 'checkbox';
+    checked: boolean;
+} | {
+    kind: 'date';
+    date: string;
+};
+
+// @public
 export interface EditorRefLike {
     // (undocumented)
     addComment(options: {
@@ -259,6 +271,9 @@ export interface EditorRefLike {
     setContentControlContent?(filter: ContentControlFilter, text: string, options?: {
         force?: boolean;
     }): boolean;
+    setContentControlValue?(filter: ContentControlFilter, value: ContentControlValue, options?: {
+        force?: boolean;
+    }): boolean;
     setParagraphStyle(options: {
         paraId: string;
         styleId: string;
@@ -321,6 +336,14 @@ export interface SetContentControlOptions extends ContentControlFilter {
     force?: boolean;
     // (undocumented)
     text: string;
+}
+
+// @public (undocumented)
+export interface SetContentControlValueOptions extends ContentControlFilter {
+    // (undocumented)
+    force?: boolean;
+    // (undocumented)
+    value: ContentControlValue;
 }
 
 // @public

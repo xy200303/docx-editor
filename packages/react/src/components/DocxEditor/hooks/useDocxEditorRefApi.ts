@@ -7,6 +7,7 @@ import {
   DocumentAgent,
   ContentControlNotFoundError,
   type ContentControlFilter,
+  type ContentControlValue,
 } from '@eigenpal/docx-editor-core/agent';
 
 import {
@@ -25,11 +26,6 @@ import {
   type SelectionState,
   type PMContentControl,
 } from '@eigenpal/docx-editor-core/prosemirror';
-import {
-  ContentControlNotFoundError,
-  type ContentControlFilter,
-  type ContentControlValue,
-} from '@eigenpal/docx-editor-core/agent';
 import type { DocxInput } from '@eigenpal/docx-editor-core/utils';
 import type { DocxEditorRef } from '../../DocxEditor';
 import type { PagedEditorRef } from '../PagedEditor';

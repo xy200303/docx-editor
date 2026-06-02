@@ -30,6 +30,7 @@ function makeRef(): EditorRefLike {
     insertImage: () => true,
     getContentControls: () => [],
     setContentControlContent: () => true,
+    setContentControlValue: () => true,
     removeContentControl: () => true,
     scrollToContentControl: () => true,
     getPageContent: () => null,
@@ -66,6 +67,7 @@ describe('WordCompatBridge — runtime parity', () => {
       'insertImage',
       'getContentControls',
       'setContentControl',
+      'setContentControlValue',
       'removeContentControl',
       'scrollToContentControl',
       'getPage',
@@ -120,6 +122,12 @@ describe('WordCompatBridge — runtime parity', () => {
   test('content-control helpers return stable shapes', () => {
     expect(Array.isArray(wordy.getContentControls())).toBe(true);
     expect(typeof wordy.setContentControl({ tag: 'name', text: 'Alice' })).toBe('boolean');
+    expect(
+      typeof wordy.setContentControlValue({
+        tag: 'agree',
+        value: { kind: 'checkbox', checked: true },
+      })
+    ).toBe('boolean');
     expect(typeof wordy.removeContentControl({ tag: 'name' })).toBe('boolean');
     expect(typeof wordy.scrollToContentControl({ tag: 'name' })).toBe('boolean');
   });

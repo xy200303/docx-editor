@@ -13,14 +13,21 @@ import { AgentToolResult } from './tools';
 import { AgentToolResult as AgentToolResult_2 } from '../../tools';
 import { ComponentOptionsMixin } from 'vue';
 import { ComponentProvideOptions } from 'vue';
+import { ContentControlFilter } from './types';
+import { ContentControlInfo } from './types';
+import { ContentControlValue } from './types';
 import { DefineComponent } from 'vue';
 import { getToolDisplayName } from './tools';
 import { getToolSchemas } from '../../tools';
 import { InsertImageOptions } from './types';
 import { InsertTableOptions } from './types';
+import { InsertTextOptions } from './types';
 import { MaybeRef } from 'vue';
 import { PublicProps } from 'vue';
 import { Ref } from 'vue';
+import { ReplaceTextOptions } from './types';
+import { SetContentControlOptions } from './types';
+import { SetContentControlValueOptions } from './types';
 
 // @public (undocumented)
 export const AgentChatLog: __VLS_WithSlots_2<typeof __VLS_component_2, __VLS_Slots_2>;
@@ -215,6 +222,12 @@ export interface AIResponsePreviewProps {
     showRetry?: boolean;
 }
 
+export { ContentControlFilter }
+
+export { ContentControlInfo }
+
+export { ContentControlValue }
+
 // @public
 export interface EditorRefLike {
     // (undocumented)
@@ -243,7 +256,7 @@ export interface EditorRefLike {
         content: unknown[];
         done?: boolean;
     }>;
-    getContentControls?(filter?: ContentControlFilter): ContentControlInfo[];
+    getContentControls?(filter?: ContentControlFilter_2): ContentControlInfo_2[];
     getCurrentPage(): number;
     // (undocumented)
     getDocument(): unknown | null;
@@ -257,7 +270,7 @@ export interface EditorRefLike {
     getTotalPages(): number;
     insertImage?(options: InsertImageOptions_2): boolean;
     insertTable?(options: InsertTableOptions_2): boolean;
-    insertText?(options: InsertTextOptions): boolean;
+    insertText?(options: InsertTextOptions_2): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)
@@ -269,19 +282,22 @@ export interface EditorRefLike {
         replaceWith: string;
         author: string;
     }): boolean;
-    removeContentControl?(filter: ContentControlFilter, options?: {
+    removeContentControl?(filter: ContentControlFilter_2, options?: {
         force?: boolean;
         keepContent?: boolean;
     }): boolean;
-    replaceText?(options: ReplaceTextOptions): boolean;
+    replaceText?(options: ReplaceTextOptions_2): boolean;
     // (undocumented)
     replyToComment(commentId: number, text: string, author: string): number | null;
     // (undocumented)
     resolveComment(commentId: number): void;
-    scrollToContentControl?(filter: ContentControlFilter): boolean;
+    scrollToContentControl?(filter: ContentControlFilter_2): boolean;
     // (undocumented)
     scrollToParaId(paraId: string): boolean;
-    setContentControlContent?(filter: ContentControlFilter, text: string, options?: {
+    setContentControlContent?(filter: ContentControlFilter_2, text: string, options?: {
+        force?: boolean;
+    }): boolean;
+    setContentControlValue?(filter: ContentControlFilter_2, value: ContentControlValue_2, options?: {
         force?: boolean;
     }): boolean;
     setParagraphStyle(options: {
@@ -295,6 +311,14 @@ export { getToolDisplayName }
 export { InsertImageOptions }
 
 export { InsertTableOptions }
+
+export { InsertTextOptions }
+
+export { ReplaceTextOptions }
+
+export { SetContentControlOptions }
+
+export { SetContentControlValueOptions }
 
 // @public (undocumented)
 export function useAgentBridge(options: UseAgentBridgeOptions): UseAgentBridgeReturn;

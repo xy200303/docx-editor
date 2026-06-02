@@ -319,8 +319,19 @@ export interface ContentControlInfo extends ContentControlFilter {
   depth?: number;
 }
 
+/** Typed value to apply to a Word content control / SDT. */
+export type ContentControlValue =
+  | { kind: 'dropdown'; value: string }
+  | { kind: 'checkbox'; checked: boolean }
+  | { kind: 'date'; date: string };
+
 export interface SetContentControlOptions extends ContentControlFilter {
   text: string;
+  force?: boolean;
+}
+
+export interface SetContentControlValueOptions extends ContentControlFilter {
+  value: ContentControlValue;
   force?: boolean;
 }
 

@@ -67,7 +67,7 @@ export interface UseDocxAgentToolsOptions {
    * Block-list of built-in tool names to hide. Applied after `include`.
    * Use for agents that should not write directly or create tracked changes:
    *
-   * @example exclude: ['insert_text', 'replace_text', 'set_content_control', 'suggest_change']
+   * @example exclude: ['insert_text', 'replace_text', 'set_content_control', 'set_content_control_value', 'suggest_change']
    */
   exclude?: readonly string[];
 }

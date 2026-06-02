@@ -101,6 +101,9 @@ setContentControlValue(doc, { tag: 'effective' }, { kind: 'date', date: '2026-06
 
 // editor ref (React / Vue)
 ref.current?.setContentControlValue({ tag: 'status' }, { kind: 'dropdown', value: '2' });
+
+// agent tool
+set_content_control_value({ tag: 'agree', kind: 'checkbox', checked: true });
 ```
 
 A dropdown value must match one of the control's list items (by value or

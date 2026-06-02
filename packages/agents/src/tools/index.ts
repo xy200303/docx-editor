@@ -13,6 +13,7 @@ import type { EditorBridge } from '../bridge';
 import type {
   ContentControlFilter,
   ContentControlType,
+  ContentControlValue,
   InsertTextPlacement,
   InsertTextPosition,
 } from '../types';
@@ -94,6 +95,37 @@ function parseContentControlFilter(
   }
 
   return { filter };
+}
+
+function parseContentControlValue(input: Record<string, unknown>): {
+  value?: ContentControlValue;
+  error?: string;
+} {
+  if (input.kind !== 'dropdown' && input.kind !== 'checkbox' && input.kind !== 'date') {
+    return { error: '`kind` must be one of: dropdown, checkbox, date.' };
+  }
+
+  if (input.kind === 'dropdown') {
+    if (!nonEmptyString(input.value)) {
+      return { error: '`value` must be a non-empty string for dropdown controls.' };
+    }
+    return { value: { kind: 'dropdown', value: input.value } };
+  }
+
+  if (input.kind === 'checkbox') {
+    if (typeof input.checked !== 'boolean') {
+      return { error: '`checked` must be a boolean for checkbox controls.' };
+    }
+    return { value: { kind: 'checkbox', checked: input.checked } };
+  }
+
+  if (!nonEmptyString(input.date)) {
+    return { error: '`date` must be an ISO yyyy-mm-dd string for date controls.' };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
+    return { error: '`date` must use ISO yyyy-mm-dd format.' };
+  }
+  return { value: { kind: 'date', date: input.date } };
 }
 
 // ── Locate tools ────────────────────────────────────────────────────────────
@@ -556,6 +588,86 @@ const setContentControlTool: AgentToolDefinition<{
   },
 };
 
+const setContentControlValueTool: AgentToolDefinition<{
+  tag?: string;
+  alias?: string;
+  id?: number;
+  type?: ContentControlType;
+  kind: 'dropdown' | 'checkbox' | 'date';
+  value?: string;
+  checked?: boolean;
+  date?: string;
+  force?: boolean;
+}> = {
+  name: 'set_content_control_value',
+  displayName: 'Setting content control value',
+  description:
+    'Set a typed Word content control / SDT value by stable template metadata. ' +
+    'Use `kind="dropdown"` for dropdown/comboBox controls, `kind="checkbox"` for checkboxes, ' +
+    'or `kind="date"` for date controls. Prefer this over set_content_control for typed controls.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tag: { type: 'string', description: 'Word content-control tag.' },
+      alias: { type: 'string', description: 'Content-control alias/title.' },
+      id: { type: 'number', description: 'Numeric content-control id.' },
+      type: {
+        type: 'string',
+        enum: CONTENT_CONTROL_TYPES,
+        description: 'Content-control type filter.',
+      },
+      kind: {
+        type: 'string',
+        enum: ['dropdown', 'checkbox', 'date'],
+        description: 'Typed value kind to set.',
+      },
+      value: {
+        type: 'string',
+        description:
+          'Dropdown/comboBox selection. May match either the item value or display text.',
+      },
+      checked: {
+        type: 'boolean',
+        description: 'Checkbox state when kind is checkbox.',
+      },
+      date: {
+        type: 'string',
+        description: 'ISO yyyy-mm-dd date when kind is date.',
+      },
+      force: {
+        type: 'boolean',
+        description:
+          'Override lock/binding checks where the editor adapter allows it. Defaults to false.',
+      },
+    },
+    required: ['kind'],
+  },
+  handler: (input, bridge) => {
+    const { filter, error: filterError } = parseContentControlFilter(input, true);
+    if (filterError) return { success: false, error: filterError };
+    const { value, error: valueError } = parseContentControlValue(input);
+    if (valueError || !value) return { success: false, error: valueError };
+    if (input.force !== undefined && typeof input.force !== 'boolean') {
+      return { success: false, error: '`force` must be a boolean when provided.' };
+    }
+
+    const ok = bridge.setContentControlValue({
+      ...filter,
+      value,
+      force: input.force,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not set typed content-control value. Possible causes: no matching tag/alias/id/type, ' +
+          'unsupported control type/value, locked or data-bound control, or this adapter does not support SDT value editing.',
+      };
+    }
+    return { success: true, data: 'Content control value updated.' };
+  },
+};
+
 const insertTableTool: AgentToolDefinition<{
   rows: number;
   columns: number;
@@ -792,6 +904,7 @@ export const agentTools: AgentToolDefinition<any>[] = [
   insertTextTool,
   replaceTextTool,
   setContentControlTool,
+  setContentControlValueTool,
   insertTableTool,
   insertImageTool,
   applyFormatting,

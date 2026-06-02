@@ -582,6 +582,11 @@ export function createReviewerBridge(reviewer: DocxReviewer): EditorBridge {
       return false;
     },
 
+    /** Headless mode has no live typed SDT value editing transaction support. */
+    setContentControlValue(): boolean {
+      return false;
+    },
+
     /** Headless mode has no live SDT editing transaction support. */
     removeContentControl(): boolean {
       return false;

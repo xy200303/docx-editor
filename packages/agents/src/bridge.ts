@@ -40,7 +40,9 @@ import type {
   InsertImageOptions,
   ContentControlFilter,
   ContentControlInfo,
+  ContentControlValue,
   SetContentControlOptions,
+  SetContentControlValueOptions,
   RemoveContentControlOptions,
   PageContent,
 } from './types';
@@ -108,6 +110,12 @@ export interface EditorRefLike {
   setContentControlContent?(
     filter: ContentControlFilter,
     text: string,
+    options?: { force?: boolean }
+  ): boolean;
+  /** Set a typed Word content control / SDT value, such as checkbox/dropdown/date. */
+  setContentControlValue?(
+    filter: ContentControlFilter,
+    value: ContentControlValue,
     options?: { force?: boolean }
   ): boolean;
   /** Remove or unwrap the first matching Word content control / SDT. */
@@ -178,6 +186,8 @@ export interface EditorBridge {
   getContentControls(filter?: ContentControlFilter): ContentControlInfo[];
   /** Replace a content control's contents directly. */
   setContentControl(options: SetContentControlOptions): boolean;
+  /** Set a typed content control value directly. */
+  setContentControlValue(options: SetContentControlValueOptions): boolean;
   /** Remove or unwrap a content control directly. */
   removeContentControl(options: RemoveContentControlOptions): boolean;
   /** Scroll to a content control by tag, alias, id, or type. */
@@ -400,6 +410,11 @@ export function createEditorBridge(editorRef: EditorRefLike, author = 'AI'): Edi
     setContentControl(options: SetContentControlOptions): boolean {
       const { text, force, ...filter } = options;
       return editorRef.setContentControlContent?.(filter, text, { force }) ?? false;
+    },
+
+    setContentControlValue(options: SetContentControlValueOptions): boolean {
+      const { value, force, ...filter } = options;
+      return editorRef.setContentControlValue?.(filter, value, { force }) ?? false;
     },
 
     removeContentControl(options: RemoveContentControlOptions): boolean {

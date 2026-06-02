@@ -53,10 +53,12 @@ export type {
   AgentContextSnapshot,
   ContentControlFilter,
   ContentControlInfo,
+  ContentControlValue,
   InsertImageOptions,
   InsertTableOptions,
   InsertTextOptions,
   ReplaceTextOptions,
   SelectionInfo,
   SetContentControlOptions,
+  SetContentControlValueOptions,
 } from './types';

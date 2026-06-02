@@ -48,7 +48,9 @@ export type {
   ReplaceTextOptions,
   ContentControlFilter,
   ContentControlInfo,
+  ContentControlValue,
   SetContentControlOptions,
+  SetContentControlValueOptions,
 } from './types';
 
 export { TextNotFoundError, ChangeNotFoundError, CommentNotFoundError } from './errors';

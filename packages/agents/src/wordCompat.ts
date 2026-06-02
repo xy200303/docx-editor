@@ -22,7 +22,7 @@
  * | tracked review suggestion          | `proposeChange({paraId, search, replaceWith})` (3 modes via empty-string semantics) |
  * | `document.getSelection()`           | `getSelection() → SelectionInfo|null` |
  * | `range.scrollIntoView()`            | `scrollTo(paraId)`                    |
- * | `contentControls.getByTag(...)`     | `getContentControls(filter?)` / `setContentControl(...)` |
+ * | `contentControls.getByTag(...)`     | `getContentControls(filter?)` / `setContentControl(...)` / `setContentControlValue(...)` |
  * | `commentCollection.getItems()`      | `getComments(filter?)`                |
  * | `body.paragraphs.getItems()`        | `getContent(opts?)`                   |
  * | `document.body.text`                | `getContentAsText(opts?)`             |
@@ -84,6 +84,7 @@ import type {
   ContentControlFilter,
   ContentControlInfo,
   SetContentControlOptions,
+  SetContentControlValueOptions,
   RemoveContentControlOptions,
   PageContent,
 } from './types';
@@ -176,6 +177,9 @@ export interface WordCompatBridge {
 
   /** Word: `contentControl.insertText(text, 'Replace')`. */
   setContentControl(options: SetContentControlOptions): boolean;
+
+  /** Word: dropdown/checkbox/date content-control state mutation. */
+  setContentControlValue(options: SetContentControlValueOptions): boolean;
 
   /** Word: `contentControl.delete(...)`. */
   removeContentControl(options: RemoveContentControlOptions): boolean;

@@ -35,11 +35,13 @@ export type { EditorRefLike } from './bridge';
 export type {
   ContentControlFilter,
   ContentControlInfo,
+  ContentControlValue,
   InsertImageOptions,
   InsertTableOptions,
   InsertTextOptions,
   ReplaceTextOptions,
   SetContentControlOptions,
+  SetContentControlValueOptions,
 } from './types';
 
 // UI components — migrated from @eigenpal/docx-editor-react in 1.0

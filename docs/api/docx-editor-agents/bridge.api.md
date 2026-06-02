@@ -74,6 +74,7 @@ export interface EditorBridge {
     scrollTo(paraId: string): boolean;
     scrollToContentControl(filter: ContentControlFilter): boolean;
     setContentControl(options: SetContentControlOptions): boolean;
+    setContentControlValue(options: SetContentControlValueOptions): boolean;
     setParagraphStyle(options: SetParagraphStyleOptions): boolean;
 }
 
@@ -144,6 +145,9 @@ export interface EditorRefLike {
     // (undocumented)
     scrollToParaId(paraId: string): boolean;
     setContentControlContent?(filter: ContentControlFilter, text: string, options?: {
+        force?: boolean;
+    }): boolean;
+    setContentControlValue?(filter: ContentControlFilter, value: ContentControlValue, options?: {
         force?: boolean;
     }): boolean;
     setParagraphStyle(options: {

@@ -31,6 +31,7 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     insertImage: () => true,
     getContentControls: () => [],
     setContentControl: () => true,
+    setContentControlValue: () => true,
     removeContentControl: () => true,
     scrollToContentControl: () => true,
     getPage: () => null,
@@ -49,8 +50,8 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
 // ============================================================================
 
 describe('agentTools', () => {
-  test('has 20 built-in tools', () => {
-    expect(agentTools).toHaveLength(20);
+  test('has 21 built-in tools', () => {
+    expect(agentTools).toHaveLength(21);
   });
 
   test('all tools have name, description, inputSchema, handler', () => {
@@ -89,6 +90,7 @@ describe('agentTools', () => {
         'resolve_comment',
         'scroll',
         'set_content_control',
+        'set_content_control_value',
         'set_paragraph_style',
         'suggest_change',
       ].sort()
@@ -103,7 +105,7 @@ describe('agentTools', () => {
 describe('getToolSchemas', () => {
   test('returns OpenAI function calling format', () => {
     const schemas = getToolSchemas();
-    expect(schemas.length).toBe(20);
+    expect(schemas.length).toBe(21);
 
     for (const schema of schemas) {
       expect(schema.type).toBe('function');

@@ -127,6 +127,18 @@ export interface ContentControlInfo extends ContentControlFilter {
 }
 
 // @public
+export type ContentControlValue = {
+    kind: 'dropdown';
+    value: string;
+} | {
+    kind: 'checkbox';
+    checked: boolean;
+} | {
+    kind: 'date';
+    date: string;
+};
+
+// @public
 export function createReviewerBridge(reviewer: DocxReviewer): EditorBridge;
 
 // @public
@@ -274,6 +286,14 @@ export interface SetContentControlOptions extends ContentControlFilter {
     text: string;
 }
 
+// @public (undocumented)
+export interface SetContentControlValueOptions extends ContentControlFilter {
+    // (undocumented)
+    force?: boolean;
+    // (undocumented)
+    value: ContentControlValue;
+}
+
 // @public
 export class TextNotFoundError extends Error {
     constructor(search: string, paragraphIndex?: number);
@@ -312,6 +332,7 @@ export interface WordCompatBridge {
     scrollTo(paraId: string): boolean;
     scrollToContentControl(filter: ContentControlFilter): boolean;
     setContentControl(options: SetContentControlOptions): boolean;
+    setContentControlValue(options: SetContentControlValueOptions): boolean;
     setParagraphStyle(options: SetParagraphStyleOptions): boolean;
 }
 

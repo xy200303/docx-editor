@@ -55,6 +55,7 @@ function makeBridge(): EditorBridge {
     insertImage: () => true,
     getContentControls: () => [],
     setContentControl: () => true,
+    setContentControlValue: () => true,
     removeContentControl: () => true,
     scrollToContentControl: () => true,
     getPage: () => null,
@@ -208,12 +209,13 @@ describe('runStdioServer — error & lifecycle', () => {
     input.emit('data', '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
     const reply = parseLine(output.lines()[0]) as JsonRpcSuccess;
     const result = reply.result as { tools: Array<{ name: string }> };
-    expect(result.tools.length).toBe(20);
+    expect(result.tools.length).toBe(21);
     const names = result.tools.map((t) => t.name);
     expect(names).toContain('insert_text');
     expect(names).toContain('replace_text');
     expect(names).toContain('read_content_controls');
     expect(names).toContain('set_content_control');
+    expect(names).toContain('set_content_control_value');
   });
 });
 
