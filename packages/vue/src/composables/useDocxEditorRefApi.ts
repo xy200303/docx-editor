@@ -28,11 +28,13 @@ import {
   findContentControlPos,
   setContentControlContentTr,
   removeContentControlTr,
+  setContentControlValueTr,
   type PMContentControl,
 } from '@eigenpal/docx-editor-core/prosemirror';
 import {
   ContentControlNotFoundError,
   type ContentControlFilter,
+  type ContentControlValue,
 } from '@eigenpal/docx-editor-core/agent';
 import {
   findInDocument as findInDocumentImpl,
@@ -207,6 +209,22 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     }
   }
 
+  function setContentControlValue(
+    filter: ContentControlFilter,
+    value: ContentControlValue,
+    options?: { force?: boolean }
+  ): boolean {
+    const view = opts.editorView.value;
+    if (!view) return false;
+    try {
+      view.dispatch(setContentControlValueTr(view.state, filter, value, options));
+      return true;
+    } catch (err) {
+      if (err instanceof ContentControlNotFoundError) return false;
+      throw err;
+    }
+  }
+
   function getPageContent(pageNumber: number) {
     return getPageContentImpl(opts.editorView.value, opts.layout.value, pageNumber);
   }
@@ -315,6 +333,7 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     scrollToContentControl,
     setContentControlContent,
     removeContentControl,
+    setContentControlValue,
     applyFormatting: opts.applyFormatting,
     setParagraphStyle: opts.setParagraphStyle,
     insertTable: insertTableFromRef,

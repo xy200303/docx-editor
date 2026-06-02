@@ -630,9 +630,15 @@ export interface SdtGroup {
     // (undocumented)
     alias?: string;
     // (undocumented)
+    bound?: boolean;
+    // (undocumented)
+    checked?: boolean;
+    // (undocumented)
     id: string;
     // (undocumented)
     lock?: string;
+    // (undocumented)
+    repeatingItem?: boolean;
     // (undocumented)
     sdtType: string;
     // (undocumented)
