@@ -84,6 +84,49 @@ export class CommentNotFoundError extends Error {
 export type ContentBlock = HeadingBlock | ParagraphBlock | TableBlock | ListItemBlock;
 
 // @public
+export interface ContentControlFilter {
+    // (undocumented)
+    alias?: string;
+    // (undocumented)
+    id?: number;
+    // (undocumented)
+    tag?: string;
+    // (undocumented)
+    type?: ContentControlType;
+}
+
+// @public (undocumented)
+export interface ContentControlInfo extends ContentControlFilter {
+    // (undocumented)
+    checked?: boolean;
+    // (undocumented)
+    dataBinding?: {
+        xpath?: string;
+        storeItemID?: string;
+        prefixMappings?: string;
+    };
+    // (undocumented)
+    dateFormat?: string;
+    // (undocumented)
+    depth?: number;
+    // (undocumented)
+    listItems?: {
+        displayText: string;
+        value: string;
+    }[];
+    // (undocumented)
+    lock?: 'sdtLocked' | 'contentLocked' | 'sdtContentLocked' | 'unlocked';
+    // (undocumented)
+    pos?: number;
+    // (undocumented)
+    sdtType: ContentControlType;
+    // (undocumented)
+    showingPlaceholder?: boolean;
+    // (undocumented)
+    text: string;
+}
+
+// @public
 export function createReviewerBridge(reviewer: DocxReviewer): EditorBridge;
 
 // @public
@@ -165,6 +208,26 @@ export interface InsertTableOptions {
     rows: number;
 }
 
+// @public
+export interface InsertTextOptions {
+    paraId?: string;
+    placement?: InsertTextPlacement;
+    position?: InsertTextPosition;
+    search?: string;
+    // (undocumented)
+    text: string;
+}
+
+// @public
+export interface ReplaceTextOptions {
+    // (undocumented)
+    paraId: string;
+    // (undocumented)
+    replaceWith: string;
+    // (undocumented)
+    search: string;
+}
+
 // @public (undocumented)
 export interface ReviewChange {
     // (undocumented)
@@ -203,6 +266,14 @@ export interface ReviewComment {
     text: string;
 }
 
+// @public (undocumented)
+export interface SetContentControlOptions extends ContentControlFilter {
+    // (undocumented)
+    force?: boolean;
+    // (undocumented)
+    text: string;
+}
+
 // @public
 export class TextNotFoundError extends Error {
     constructor(search: string, paragraphIndex?: number);
@@ -220,6 +291,7 @@ export interface WordCompatBridge {
     getComments(filter?: CommentFilter): ReviewComment[];
     getContent(options?: GetContentOptions): ContentBlock[];
     getContentAsText(options?: GetContentOptions): string;
+    getContentControls(filter?: ContentControlFilter): ContentControlInfo[];
     getPage(pageNumber: number): PageContent | null;
     getPages(options: {
         from: number;
@@ -229,12 +301,17 @@ export interface WordCompatBridge {
     getTotalPages(): number;
     insertImage(options: InsertImageOptions): boolean;
     insertTable(options: InsertTableOptions): boolean;
+    insertText(options: InsertTextOptions): boolean;
     onContentChange(listener: (event: ContentChangeEvent) => void): () => void;
     onSelectionChange(listener: (event: SelectionChangeEvent) => void): () => void;
     proposeChange(options: ProposeChangeOptions): boolean;
+    removeContentControl(options: RemoveContentControlOptions): boolean;
+    replaceText(options: ReplaceTextOptions): boolean;
     replyTo(commentId: number, options: ReplyOptions): number | null;
     resolveComment(commentId: number): void;
     scrollTo(paraId: string): boolean;
+    scrollToContentControl(filter: ContentControlFilter): boolean;
+    setContentControl(options: SetContentControlOptions): boolean;
     setParagraphStyle(options: SetParagraphStyleOptions): boolean;
 }
 

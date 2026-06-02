@@ -222,6 +222,44 @@ export interface SetParagraphStyleOptions {
   styleId: string;
 }
 
+export type InsertTextPosition =
+  | 'cursor'
+  | 'paragraph_start'
+  | 'paragraph_end'
+  | 'before_paragraph'
+  | 'after_paragraph';
+
+export type InsertTextPlacement = 'before' | 'after' | 'replace';
+
+/**
+ * Direct text insertion. This edits the document immediately; it does not add
+ * comments or create tracked-change suggestions.
+ */
+export interface InsertTextOptions {
+  text: string;
+  /** Optional paragraph anchor. Omit to insert at the current cursor/selection. */
+  paraId?: string;
+  /**
+   * Paragraph-relative placement when `paraId` is supplied and `search` is not.
+   * Defaults to `paragraph_end` with a paraId, otherwise `cursor`.
+   */
+  position?: InsertTextPosition;
+  /** Optional unique phrase inside `paraId` to insert around or replace. */
+  search?: string;
+  /** Search-relative placement. Defaults to `after` when `search` is supplied. */
+  placement?: InsertTextPlacement;
+}
+
+/**
+ * Direct text replacement/deletion in a paragraph. This edits the document
+ * immediately; it does not add comments or create tracked-change suggestions.
+ */
+export interface ReplaceTextOptions {
+  paraId: string;
+  search: string;
+  replaceWith: string;
+}
+
 /** Insert a table at the current cursor, or after a paragraph when `paraId` is supplied. */
 export interface InsertTableOptions {
   rows: number;
@@ -239,6 +277,56 @@ export interface InsertImageOptions {
   width?: number;
   height?: number;
   paraId?: string;
+}
+
+export type ContentControlType =
+  | 'richText'
+  | 'plainText'
+  | 'date'
+  | 'dropDownList'
+  | 'comboBox'
+  | 'checkbox'
+  | 'picture'
+  | 'buildingBlockGallery'
+  | 'group'
+  | 'equation'
+  | 'citation'
+  | 'bibliography'
+  | 'unknown';
+
+/** Filter used to address Word content controls / SDTs by stable metadata. */
+export interface ContentControlFilter {
+  tag?: string;
+  alias?: string;
+  id?: number;
+  type?: ContentControlType;
+}
+
+export interface ContentControlInfo extends ContentControlFilter {
+  sdtType: ContentControlType;
+  lock?: 'sdtLocked' | 'contentLocked' | 'sdtContentLocked' | 'unlocked';
+  showingPlaceholder?: boolean;
+  checked?: boolean;
+  dateFormat?: string;
+  listItems?: { displayText: string; value: string }[];
+  dataBinding?: {
+    xpath?: string;
+    storeItemID?: string;
+    prefixMappings?: string;
+  };
+  text: string;
+  pos?: number;
+  depth?: number;
+}
+
+export interface SetContentControlOptions extends ContentControlFilter {
+  text: string;
+  force?: boolean;
+}
+
+export interface RemoveContentControlOptions extends ContentControlFilter {
+  force?: boolean;
+  keepContent?: boolean;
 }
 
 /** A single paragraph anchored on a page (returned by `getPage` / `getPages`). */

@@ -562,6 +562,36 @@ export function createReviewerBridge(reviewer: DocxReviewer): EditorBridge {
       }
     },
 
+    /** Headless reviewer bridge is review/redline oriented; direct text edits need a live editor view. */
+    insertText(): boolean {
+      return false;
+    },
+
+    /** Headless reviewer bridge is review/redline oriented; direct text edits need a live editor view. */
+    replaceText(): boolean {
+      return false;
+    },
+
+    /** Headless mode has no ProseMirror SDT node positions to inspect. */
+    getContentControls(): never[] {
+      return [];
+    },
+
+    /** Headless mode has no live SDT editing transaction support. */
+    setContentControl(): boolean {
+      return false;
+    },
+
+    /** Headless mode has no live SDT editing transaction support. */
+    removeContentControl(): boolean {
+      return false;
+    },
+
+    /** Headless mode has no viewport to scroll. */
+    scrollToContentControl(): boolean {
+      return false;
+    },
+
     /** Headless reviewer bridge is read/comment/redline oriented; structural live inserts need an editor view. */
     insertTable(): boolean {
       return false;

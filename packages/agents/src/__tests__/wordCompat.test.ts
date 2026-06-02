@@ -24,8 +24,14 @@ function makeRef(): EditorRefLike {
     getComments: () => [],
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertText: () => true,
+    replaceText: () => true,
     insertTable: () => true,
     insertImage: () => true,
+    getContentControls: () => [],
+    setContentControlContent: () => true,
+    removeContentControl: () => true,
+    scrollToContentControl: () => true,
     getPageContent: () => null,
     getTotalPages: () => 0,
     getCurrentPage: () => 0,
@@ -52,10 +58,16 @@ describe('WordCompatBridge — runtime parity', () => {
       'replyTo',
       'resolveComment',
       'proposeChange',
+      'insertText',
+      'replaceText',
       'applyFormatting',
       'setParagraphStyle',
       'insertTable',
       'insertImage',
+      'getContentControls',
+      'setContentControl',
+      'removeContentControl',
+      'scrollToContentControl',
       'getPage',
       'getPages',
       'getTotalPages',
@@ -97,8 +109,19 @@ describe('WordCompatBridge — runtime parity', () => {
   });
 
   test('structural insertions return boolean', () => {
+    expect(typeof wordy.insertText({ text: 'hello' })).toBe('boolean');
+    expect(typeof wordy.replaceText({ paraId: 'p_a3f', search: 'old', replaceWith: 'new' })).toBe(
+      'boolean'
+    );
     expect(typeof wordy.insertTable({ rows: 2, columns: 2 })).toBe('boolean');
     expect(typeof wordy.insertImage({ src: 'data:image/png;base64,abc' })).toBe('boolean');
+  });
+
+  test('content-control helpers return stable shapes', () => {
+    expect(Array.isArray(wordy.getContentControls())).toBe(true);
+    expect(typeof wordy.setContentControl({ tag: 'name', text: 'Alice' })).toBe('boolean');
+    expect(typeof wordy.removeContentControl({ tag: 'name' })).toBe('boolean');
+    expect(typeof wordy.scrollToContentControl({ tag: 'name' })).toBe('boolean');
   });
 
   test('onContentChange returns an unsubscribe function', () => {

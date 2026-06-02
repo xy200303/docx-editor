@@ -32,7 +32,15 @@ export type {
 export type { AgentToolDefinition, AgentToolResult } from './tools';
 export { getToolDisplayName } from './tools';
 export type { EditorRefLike } from './bridge';
-export type { InsertImageOptions, InsertTableOptions } from './types';
+export type {
+  ContentControlFilter,
+  ContentControlInfo,
+  InsertImageOptions,
+  InsertTableOptions,
+  InsertTextOptions,
+  ReplaceTextOptions,
+  SetContentControlOptions,
+} from './types';
 
 // UI components — migrated from @eigenpal/docx-editor-react in 1.0
 // (canonical home is now the agents package; React adapter still re-exports them

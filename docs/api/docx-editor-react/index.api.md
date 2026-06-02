@@ -186,6 +186,13 @@ export interface DocxEditorRef {
         hasHeader?: boolean;
         paraId?: string;
     }) => boolean;
+    insertText: (options: {
+        text: string;
+        paraId?: string;
+        position?: 'cursor' | 'paragraph_start' | 'paragraph_end' | 'before_paragraph' | 'after_paragraph';
+        search?: string;
+        placement?: 'before' | 'after' | 'replace';
+    }) => boolean;
     loadDocument: (doc: Document_2) => void;
     loadDocumentBuffer: (buffer: DocxInput) => Promise<void>;
     onContentChange: (listener: (document: Document_2) => void) => () => void;
@@ -201,6 +208,11 @@ export interface DocxEditorRef {
     removeContentControl: (filter: ContentControlFilter, options?: {
         force?: boolean;
         keepContent?: boolean;
+    }) => boolean;
+    replaceText: (options: {
+        paraId: string;
+        search: string;
+        replaceWith: string;
     }) => boolean;
     replyToComment: (commentId: number, text: string, author: string) => number | null;
     resolveComment: (commentId: number) => void;

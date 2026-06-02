@@ -126,6 +126,24 @@ export type DocxEditorRef = EditorRefLike & {
     height?: number;
     paraId?: string;
   }): boolean;
+  /**
+   * Directly insert text without creating comments or tracked changes. Omit
+   * `paraId` to insert at the current cursor/selection.
+   */
+  insertText(options: {
+    text: string;
+    paraId?: string;
+    position?:
+      | 'cursor'
+      | 'paragraph_start'
+      | 'paragraph_end'
+      | 'before_paragraph'
+      | 'after_paragraph';
+    search?: string;
+    placement?: 'before' | 'after' | 'replace';
+  }): boolean;
+  /** Directly replace/delete a unique phrase without tracked changes. */
+  replaceText(options: { paraId: string; search: string; replaceWith: string }): boolean;
   /** Open print preview / browser print. */
   openPrintPreview(): void;
   /** Print the document. */

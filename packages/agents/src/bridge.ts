@@ -34,8 +34,14 @@ import type {
   SelectionInfo,
   ApplyFormattingOptions,
   SetParagraphStyleOptions,
+  InsertTextOptions,
+  ReplaceTextOptions,
   InsertTableOptions,
   InsertImageOptions,
+  ContentControlFilter,
+  ContentControlInfo,
+  SetContentControlOptions,
+  RemoveContentControlOptions,
   PageContent,
 } from './types';
 import { getContent, formatContentForLLM } from './content';
@@ -88,10 +94,29 @@ export interface EditorRefLike {
   }): boolean;
   /** Apply a paragraph style by styleId. Returns false if paraId is unknown. */
   setParagraphStyle(options: { paraId: string; styleId: string }): boolean;
+  /** Directly insert text without tracked-change marks. */
+  insertText?(options: InsertTextOptions): boolean;
+  /** Directly replace/delete text without tracked-change marks. */
+  replaceText?(options: ReplaceTextOptions): boolean;
   /** Insert a table at the cursor, or after a paragraph when paraId is supplied. */
   insertTable?(options: InsertTableOptions): boolean;
   /** Insert an inline image at the cursor, or inside a paragraph when paraId is supplied. */
   insertImage?(options: InsertImageOptions): boolean;
+  /** List Word content controls / SDTs in the live editor. */
+  getContentControls?(filter?: ContentControlFilter): ContentControlInfo[];
+  /** Replace the content of the first matching Word content control / SDT. */
+  setContentControlContent?(
+    filter: ContentControlFilter,
+    text: string,
+    options?: { force?: boolean }
+  ): boolean;
+  /** Remove or unwrap the first matching Word content control / SDT. */
+  removeContentControl?(
+    filter: ContentControlFilter,
+    options?: { force?: boolean; keepContent?: boolean }
+  ): boolean;
+  /** Scroll to the first matching Word content control / SDT. */
+  scrollToContentControl?(filter: ContentControlFilter): boolean;
   /** Read a single page's paragraphs (1-indexed). Returns null if the page does not exist. */
   getPageContent(pageNumber: number): PageContent | null;
   /** Total number of pages currently rendered. */
@@ -141,10 +166,22 @@ export interface EditorBridge {
    * Direct edit, not a tracked change.
    */
   setParagraphStyle(options: SetParagraphStyleOptions): boolean;
+  /** Directly insert text without creating comments or tracked changes. */
+  insertText(options: InsertTextOptions): boolean;
+  /** Directly replace/delete text without creating comments or tracked changes. */
+  replaceText(options: ReplaceTextOptions): boolean;
   /** Insert a table at the current cursor, or after `paraId` when supplied. */
   insertTable(options: InsertTableOptions): boolean;
   /** Insert an inline image at the current cursor, or at the end of `paraId` when supplied. */
   insertImage(options: InsertImageOptions): boolean;
+  /** List Word content controls / SDTs by tag, alias, id, or type. */
+  getContentControls(filter?: ContentControlFilter): ContentControlInfo[];
+  /** Replace a content control's contents directly. */
+  setContentControl(options: SetContentControlOptions): boolean;
+  /** Remove or unwrap a content control directly. */
+  removeContentControl(options: RemoveContentControlOptions): boolean;
+  /** Scroll to a content control by tag, alias, id, or type. */
+  scrollToContentControl(filter: ContentControlFilter): boolean;
   /** Read a single page (1-indexed). Returns null if the page does not exist. */
   getPage(pageNumber: number): PageContent | null;
   /** Read a range of pages (1-indexed, inclusive). Out-of-range pages are skipped. */
@@ -340,12 +377,38 @@ export function createEditorBridge(editorRef: EditorRefLike, author = 'AI'): Edi
       });
     },
 
+    insertText(options: InsertTextOptions): boolean {
+      return editorRef.insertText?.(options) ?? false;
+    },
+
+    replaceText(options: ReplaceTextOptions): boolean {
+      return editorRef.replaceText?.(options) ?? false;
+    },
+
     insertTable(options: InsertTableOptions): boolean {
       return editorRef.insertTable?.(options) ?? false;
     },
 
     insertImage(options: InsertImageOptions): boolean {
       return editorRef.insertImage?.(options) ?? false;
+    },
+
+    getContentControls(filter?: ContentControlFilter): ContentControlInfo[] {
+      return editorRef.getContentControls?.(filter) ?? [];
+    },
+
+    setContentControl(options: SetContentControlOptions): boolean {
+      const { text, force, ...filter } = options;
+      return editorRef.setContentControlContent?.(filter, text, { force }) ?? false;
+    },
+
+    removeContentControl(options: RemoveContentControlOptions): boolean {
+      const { force, keepContent, ...filter } = options;
+      return editorRef.removeContentControl?.(filter, { force, keepContent }) ?? false;
+    },
+
+    scrollToContentControl(filter: ContentControlFilter): boolean {
+      return editorRef.scrollToContentControl?.(filter) ?? false;
     },
 
     getPage(pageNumber: number): PageContent | null {

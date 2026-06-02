@@ -44,6 +44,11 @@ export type {
   BatchError,
   InsertTableOptions,
   InsertImageOptions,
+  InsertTextOptions,
+  ReplaceTextOptions,
+  ContentControlFilter,
+  ContentControlInfo,
+  SetContentControlOptions,
 } from './types';
 
 export { TextNotFoundError, ChangeNotFoundError, CommentNotFoundError } from './errors';

@@ -14,6 +14,7 @@ The canonical "plug an agent into the editor" demo. A Next.js app that:
 ```bash
 cp .env.example .env.local
 # Fill OPENAI_API_KEY in .env.local
+# Optional: set OPENAI_BASE_URL for an OpenAI-compatible gateway/proxy
 bun install
 bun run dev --filter agent-chat-demo
 ```
@@ -30,6 +31,11 @@ docx tools come from `getAiSdkTools()`. The demo adds a server-executed
 `generate_image` tool because image generation needs your API key:
 
 ```ts
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE_URL,
+});
+
 const tools = {
   ...getAiSdkTools(),
   generate_image: tool({

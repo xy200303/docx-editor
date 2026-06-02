@@ -52,6 +52,7 @@ export interface EditorBridge {
     getComments(filter?: CommentFilter): ReviewComment[];
     getContent(options?: GetContentOptions): ContentBlock[];
     getContentAsText(options?: GetContentOptions): string;
+    getContentControls(filter?: ContentControlFilter): ContentControlInfo[];
     getCurrentPage(): number;
     getPage(pageNumber: number): PageContent | null;
     getPages(options: {
@@ -62,12 +63,17 @@ export interface EditorBridge {
     getTotalPages(): number;
     insertImage(options: InsertImageOptions): boolean;
     insertTable(options: InsertTableOptions): boolean;
+    insertText(options: InsertTextOptions): boolean;
     onContentChange(listener: (event: ContentChangeEvent) => void): () => void;
     onSelectionChange(listener: (event: SelectionChangeEvent) => void): () => void;
     proposeChange(options: ProposeChangeOptions): boolean;
+    removeContentControl(options: RemoveContentControlOptions): boolean;
+    replaceText(options: ReplaceTextOptions): boolean;
     replyTo(commentId: number, options: ReplyOptions): number | null;
     resolveComment(commentId: number): void;
     scrollTo(paraId: string): boolean;
+    scrollToContentControl(filter: ContentControlFilter): boolean;
+    setContentControl(options: SetContentControlOptions): boolean;
     setParagraphStyle(options: SetParagraphStyleOptions): boolean;
 }
 
@@ -99,6 +105,7 @@ export interface EditorRefLike {
         content: unknown[];
         done?: boolean;
     }>;
+    getContentControls?(filter?: ContentControlFilter): ContentControlInfo[];
     getCurrentPage(): number;
     // (undocumented)
     getDocument(): unknown | null;
@@ -112,6 +119,7 @@ export interface EditorRefLike {
     getTotalPages(): number;
     insertImage?(options: InsertImageOptions): boolean;
     insertTable?(options: InsertTableOptions): boolean;
+    insertText?(options: InsertTextOptions): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)
@@ -123,12 +131,21 @@ export interface EditorRefLike {
         replaceWith: string;
         author: string;
     }): boolean;
+    removeContentControl?(filter: ContentControlFilter, options?: {
+        force?: boolean;
+        keepContent?: boolean;
+    }): boolean;
+    replaceText?(options: ReplaceTextOptions): boolean;
     // (undocumented)
     replyToComment(commentId: number, text: string, author: string): number | null;
     // (undocumented)
     resolveComment(commentId: number): void;
+    scrollToContentControl?(filter: ContentControlFilter): boolean;
     // (undocumented)
     scrollToParaId(paraId: string): boolean;
+    setContentControlContent?(filter: ContentControlFilter, text: string, options?: {
+        force?: boolean;
+    }): boolean;
     setParagraphStyle(options: {
         paraId: string;
         styleId: string;

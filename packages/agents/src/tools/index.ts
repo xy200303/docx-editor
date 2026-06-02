@@ -10,8 +10,91 @@
 export type { AgentToolDefinition, AgentToolResult } from './types';
 import type { AgentToolDefinition, AgentToolResult } from './types';
 import type { EditorBridge } from '../bridge';
+import type {
+  ContentControlFilter,
+  ContentControlType,
+  InsertTextPlacement,
+  InsertTextPosition,
+} from '../types';
 import { applyFormatting, setParagraphStyle } from './formatting';
 import { readPage, readPages } from './pages';
+
+const INSERT_TEXT_POSITIONS: InsertTextPosition[] = [
+  'cursor',
+  'paragraph_start',
+  'paragraph_end',
+  'before_paragraph',
+  'after_paragraph',
+];
+
+const INSERT_TEXT_PLACEMENTS: InsertTextPlacement[] = ['before', 'after', 'replace'];
+
+const CONTENT_CONTROL_TYPES: ContentControlType[] = [
+  'richText',
+  'plainText',
+  'date',
+  'dropDownList',
+  'comboBox',
+  'checkbox',
+  'picture',
+  'buildingBlockGallery',
+  'group',
+  'equation',
+  'citation',
+  'bibliography',
+  'unknown',
+];
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function parseContentControlFilter(
+  input: Record<string, unknown>,
+  requireAnchor: boolean
+): { filter: ContentControlFilter; error?: string } {
+  const filter: ContentControlFilter = {};
+  if (input.tag !== undefined) {
+    if (!nonEmptyString(input.tag)) return { filter, error: '`tag` must be a non-empty string.' };
+    filter.tag = input.tag;
+  }
+  if (input.alias !== undefined) {
+    if (!nonEmptyString(input.alias)) {
+      return { filter, error: '`alias` must be a non-empty string.' };
+    }
+    filter.alias = input.alias;
+  }
+  if (input.id !== undefined) {
+    const id = Number(input.id);
+    if (!Number.isInteger(id)) return { filter, error: '`id` must be an integer.' };
+    filter.id = id;
+  }
+  if (input.type !== undefined) {
+    if (!CONTENT_CONTROL_TYPES.includes(input.type as ContentControlType)) {
+      return { filter, error: '`type` must be a supported content-control type.' };
+    }
+    filter.type = input.type as ContentControlType;
+  }
+
+  if (
+    requireAnchor &&
+    filter.tag === undefined &&
+    filter.alias === undefined &&
+    filter.id === undefined &&
+    filter.type === undefined
+  ) {
+    return {
+      filter,
+      error: 'Provide at least one content-control anchor: `tag`, `alias`, `id`, or `type`.',
+    };
+  }
+
+  return { filter };
+}
 
 // ── Locate tools ────────────────────────────────────────────────────────────
 
@@ -126,6 +209,51 @@ const readChanges: AgentToolDefinition = {
   },
 };
 
+const readContentControls: AgentToolDefinition<{
+  tag?: string;
+  alias?: string;
+  id?: number;
+  type?: ContentControlType;
+}> = {
+  name: 'read_content_controls',
+  displayName: 'Reading content controls',
+  description:
+    'List Word content controls / SDTs in the live document. Use this for template-style ' +
+    'documents where stable `tag`, `alias`, or `id` anchors are better than paragraph text search.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tag: { type: 'string', description: 'Optional Word content-control tag.' },
+      alias: { type: 'string', description: 'Optional content-control alias/title.' },
+      id: { type: 'number', description: 'Optional numeric content-control id.' },
+      type: {
+        type: 'string',
+        enum: CONTENT_CONTROL_TYPES,
+        description: 'Optional content-control type filter.',
+      },
+    },
+  },
+  handler: (input, bridge) => {
+    const { filter, error } = parseContentControlFilter(input, false);
+    if (error) return { success: false, error };
+
+    const controls = bridge.getContentControls(filter);
+    if (controls.length === 0) return { success: true, data: 'No content controls.' };
+    return {
+      success: true,
+      data: controls.map((control) => ({
+        tag: control.tag,
+        alias: control.alias,
+        id: control.id,
+        type: control.sdtType,
+        lock: control.lock,
+        showingPlaceholder: control.showingPlaceholder,
+        text: control.text,
+      })),
+    };
+  },
+};
+
 // ── Mutate tools ────────────────────────────────────────────────────────────
 
 const addComment: AgentToolDefinition<{
@@ -217,6 +345,214 @@ const suggestChange: AgentToolDefinition<{
       success: true,
       data: `Replacement proposed: "${input.search}" → "${input.replaceWith}" on ${input.paraId}.`,
     };
+  },
+};
+
+const insertTextTool: AgentToolDefinition<{
+  text: string;
+  paraId?: string;
+  position?: InsertTextPosition;
+  search?: string;
+  placement?: InsertTextPlacement;
+}> = {
+  name: 'insert_text',
+  displayName: 'Inserting text',
+  description:
+    'Directly insert text into the live document without creating a comment or tracked-change ' +
+    'suggestion. Use this for normal edit requests like "add this paragraph", "write an intro", ' +
+    'or "insert this sentence". Omit `paraId` to insert at the current cursor/selection. With ' +
+    '`paraId`, default insertion is at the end of that paragraph. With `search`, insert before, ' +
+    'after, or replace that unique phrase inside the paragraph.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'Text to insert.' },
+      paraId: {
+        type: 'string',
+        description: 'Optional paragraph id from read_document / find_text.',
+      },
+      position: {
+        type: 'string',
+        enum: INSERT_TEXT_POSITIONS,
+        description:
+          'Where to insert when `search` is omitted. Defaults to cursor without paraId, paragraph_end with paraId.',
+      },
+      search: {
+        type: 'string',
+        description: 'Optional unique phrase inside `paraId` to insert around or replace.',
+      },
+      placement: {
+        type: 'string',
+        enum: INSERT_TEXT_PLACEMENTS,
+        description: 'Search-relative placement. Defaults to after.',
+      },
+    },
+    required: ['text'],
+  },
+  handler: (input, bridge) => {
+    if (typeof input.text !== 'string' || input.text.length === 0) {
+      return { success: false, error: '`text` must be a non-empty string.' };
+    }
+    const paraId = stringOrUndefined(input.paraId);
+    if (input.paraId !== undefined && !nonEmptyString(input.paraId)) {
+      return { success: false, error: '`paraId` must be a non-empty string when provided.' };
+    }
+    if (
+      input.position !== undefined &&
+      !INSERT_TEXT_POSITIONS.includes(input.position as InsertTextPosition)
+    ) {
+      return { success: false, error: '`position` must be a supported insert position.' };
+    }
+    if (
+      input.placement !== undefined &&
+      !INSERT_TEXT_PLACEMENTS.includes(input.placement as InsertTextPlacement)
+    ) {
+      return { success: false, error: '`placement` must be before, after, or replace.' };
+    }
+    if (input.search !== undefined && !nonEmptyString(input.search)) {
+      return { success: false, error: '`search` must be a non-empty string when provided.' };
+    }
+    if (input.search !== undefined && !paraId) {
+      return { success: false, error: '`search` requires a `paraId` anchor.' };
+    }
+
+    const ok = bridge.insertText({
+      text: input.text,
+      paraId,
+      position: input.position,
+      search: input.search,
+      placement: input.placement,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not insert text. Possible causes: editor not ready; paraId not found; ' +
+          'search missing / ambiguous; or this adapter does not support direct text edits.',
+      };
+    }
+    return { success: true, data: paraId ? `Inserted text in ${paraId}.` : 'Inserted text.' };
+  },
+};
+
+const replaceTextTool: AgentToolDefinition<{
+  paraId: string;
+  search: string;
+  replaceWith: string;
+}> = {
+  name: 'replace_text',
+  displayName: 'Replacing text',
+  description:
+    'Directly replace or delete a unique phrase in a paragraph without creating a comment or ' +
+    'tracked-change suggestion. Use suggest_change instead only when the user explicitly wants reviewable changes.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      paraId: { type: 'string', description: 'Paragraph id from read_document / find_text.' },
+      search: {
+        type: 'string',
+        description: 'Unique phrase to replace within the paragraph.',
+      },
+      replaceWith: {
+        type: 'string',
+        description: 'Replacement text. Empty string deletes the matched phrase.',
+      },
+    },
+    required: ['paraId', 'search', 'replaceWith'],
+  },
+  handler: (input, bridge) => {
+    if (!nonEmptyString(input.paraId)) {
+      return { success: false, error: '`paraId` must be a non-empty string.' };
+    }
+    if (!nonEmptyString(input.search)) {
+      return { success: false, error: '`search` must be a non-empty string.' };
+    }
+    if (typeof input.replaceWith !== 'string') {
+      return { success: false, error: '`replaceWith` must be a string.' };
+    }
+
+    const ok = bridge.replaceText({
+      paraId: input.paraId,
+      search: input.search,
+      replaceWith: input.replaceWith,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not replace text. Possible causes: paraId not found; search missing / ambiguous; ' +
+          'or this adapter does not support direct text edits.',
+      };
+    }
+    return {
+      success: true,
+      data: input.replaceWith
+        ? `Replaced "${input.search}" on ${input.paraId}.`
+        : `Deleted "${input.search}" on ${input.paraId}.`,
+    };
+  },
+};
+
+const setContentControlTool: AgentToolDefinition<{
+  tag?: string;
+  alias?: string;
+  id?: number;
+  type?: ContentControlType;
+  text: string;
+  force?: boolean;
+}> = {
+  name: 'set_content_control',
+  displayName: 'Filling content control',
+  description:
+    'Replace the text content of a Word content control / SDT by stable template metadata ' +
+    '(`tag`, `alias`, `id`, or `type`). Prefer this over paragraph search when the document is a template.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tag: { type: 'string', description: 'Word content-control tag.' },
+      alias: { type: 'string', description: 'Content-control alias/title.' },
+      id: { type: 'number', description: 'Numeric content-control id.' },
+      type: {
+        type: 'string',
+        enum: CONTENT_CONTROL_TYPES,
+        description: 'Content-control type filter.',
+      },
+      text: {
+        type: 'string',
+        description: 'Replacement text. Newlines become paragraphs for rich-text controls.',
+      },
+      force: {
+        type: 'boolean',
+        description:
+          'Override type/binding checks where the editor adapter allows it. Defaults to false.',
+      },
+    },
+    required: ['text'],
+  },
+  handler: (input, bridge) => {
+    const { filter, error } = parseContentControlFilter(input, true);
+    if (error) return { success: false, error };
+    if (typeof input.text !== 'string') {
+      return { success: false, error: '`text` must be a string.' };
+    }
+    if (input.force !== undefined && typeof input.force !== 'boolean') {
+      return { success: false, error: '`force` must be a boolean when provided.' };
+    }
+
+    const ok = bridge.setContentControl({
+      ...filter,
+      text: input.text,
+      force: input.force,
+    });
+    if (!ok) {
+      return {
+        success: false,
+        error:
+          'Could not set content control. Possible causes: no matching tag/alias/id/type, ' +
+          'locked or unsupported control, or this adapter does not support SDT editing.',
+      };
+    }
+    return { success: true, data: 'Content control updated.' };
   },
 };
 
@@ -450,8 +786,12 @@ export const agentTools: AgentToolDefinition<any>[] = [
   findText,
   readComments,
   readChanges,
+  readContentControls,
   addComment,
   suggestChange,
+  insertTextTool,
+  replaceTextTool,
+  setContentControlTool,
   insertTableTool,
   insertImageTool,
   applyFormatting,

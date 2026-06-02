@@ -18,8 +18,14 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertText: () => true,
+    replaceText: () => true,
     insertTable: () => true,
     insertImage: () => true,
+    getContentControls: () => [],
+    setContentControl: () => true,
+    removeContentControl: () => true,
+    scrollToContentControl: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -63,7 +69,7 @@ describe('McpServer.handle — tools/list', () => {
     const reply = server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     const result = (reply as JsonRpcSuccess).result as McpToolsListResult;
     expect(result.tools).toBeDefined();
-    expect(result.tools.length).toBe(16);
+    expect(result.tools.length).toBe(20);
     for (const tool of result.tools) {
       expect(typeof tool.name).toBe('string');
       expect(typeof tool.description).toBe('string');
@@ -77,15 +83,19 @@ describe('McpServer.handle — tools/list', () => {
         'find_text',
         'insert_image',
         'insert_table',
+        'insert_text',
         'read_changes',
         'read_comments',
+        'read_content_controls',
         'read_document',
         'read_page',
         'read_pages',
         'read_selection',
+        'replace_text',
         'reply_comment',
         'resolve_comment',
         'scroll',
+        'set_content_control',
         'set_paragraph_style',
         'suggest_change',
       ].sort()
@@ -236,7 +246,7 @@ describe('McpServer.handle — protocol-level paths', () => {
 });
 
 describe('McpServer + bridge contract — every tool round-trips', () => {
-  test('all 10 tools dispatch without throwing and return a content payload', () => {
+  test('all built-in tools dispatch without throwing and return a content payload', () => {
     const server = new McpServer(makeBridge());
     const cases: Array<{ name: string; args: Record<string, unknown> }> = [
       { name: 'read_document', args: {} },
@@ -244,10 +254,20 @@ describe('McpServer + bridge contract — every tool round-trips', () => {
       { name: 'find_text', args: { query: 'hello' } },
       { name: 'read_comments', args: {} },
       { name: 'read_changes', args: {} },
+      { name: 'read_content_controls', args: {} },
       { name: 'add_comment', args: { paraId: 'p', text: 't' } },
       { name: 'suggest_change', args: { paraId: 'p', search: 'a', replaceWith: 'b' } },
+      { name: 'insert_text', args: { text: 't', paraId: 'p' } },
+      { name: 'replace_text', args: { paraId: 'p', search: 'a', replaceWith: 'b' } },
+      { name: 'set_content_control', args: { tag: 'customer_name', text: 'Acme' } },
+      { name: 'insert_table', args: { rows: 1, columns: 1 } },
+      { name: 'insert_image', args: { src: 'data:image/png;base64,AA==', width: 1, height: 1 } },
+      { name: 'apply_formatting', args: { paraId: 'p', marks: { bold: true } } },
+      { name: 'set_paragraph_style', args: { paraId: 'p', styleId: 'Heading1' } },
       { name: 'reply_comment', args: { commentId: 1, text: 't' } },
       { name: 'resolve_comment', args: { commentId: 1 } },
+      { name: 'read_page', args: { pageNumber: 1 } },
+      { name: 'read_pages', args: { from: 1, to: 1 } },
       { name: 'scroll', args: { paraId: 'p' } },
     ];
 

@@ -1,8 +1,8 @@
 import { useImperativeHandle } from 'react';
 import { TextSelection } from 'prosemirror-state';
+import type { Schema, Node as PMNode } from 'prosemirror-model';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
 import type { Comment } from '@eigenpal/docx-editor-core/types/content';
-import { DocumentAgent } from '@eigenpal/docx-editor-core/agent';
 import {
   DocumentAgent,
   ContentControlNotFoundError,
@@ -86,6 +86,101 @@ export function useDocxEditorRefApi({
     styles: Parameters<typeof createStyleResolver>[0]
   ) => ReturnType<typeof createStyleResolver>;
 }) {
+  function createParagraphNodes(schema: Schema, text: string): PMNode[] {
+    return text
+      .split(/\r?\n/)
+      .map((line) => schema.nodes.paragraph.create(null, line ? schema.text(line) : null));
+  }
+
+  function insertTextDirect(options: {
+    text: string;
+    paraId?: string;
+    position?:
+      | 'cursor'
+      | 'paragraph_start'
+      | 'paragraph_end'
+      | 'before_paragraph'
+      | 'after_paragraph';
+    search?: string;
+    placement?: 'before' | 'after' | 'replace';
+  }): boolean {
+    const view = pagedEditorRef.current?.getView();
+    if (!view || typeof options.text !== 'string' || options.text.length === 0) return false;
+
+    const { state } = view;
+    let tr = state.tr;
+
+    if (options.search) {
+      if (!options.paraId) return false;
+      const range = findParaIdRange(state.doc, options.paraId);
+      if (!range) return false;
+      const textRange = findTextInPmParagraph(state.doc, range.from, range.to, options.search);
+      if (!textRange) return false;
+
+      const placement = options.placement ?? 'after';
+      if (placement === 'replace') {
+        tr = tr.insertText(options.text, textRange.from, textRange.to);
+      } else if (placement === 'before') {
+        tr = tr.insertText(options.text, textRange.from, textRange.from);
+      } else if (placement === 'after') {
+        tr = tr.insertText(options.text, textRange.to, textRange.to);
+      } else {
+        return false;
+      }
+      view.dispatch(tr.scrollIntoView());
+      view.focus();
+      return true;
+    }
+
+    const position = options.position ?? (options.paraId ? 'paragraph_end' : 'cursor');
+    if (position === 'cursor') {
+      tr = tr.insertText(options.text, state.selection.from, state.selection.to);
+    } else {
+      if (!options.paraId) return false;
+      const range = findParaIdRange(state.doc, options.paraId);
+      if (!range) return false;
+
+      if (position === 'paragraph_start') {
+        tr = tr.insertText(options.text, range.from + 1, range.from + 1);
+      } else if (position === 'paragraph_end') {
+        tr = tr.insertText(options.text, range.to - 1, range.to - 1);
+      } else if (position === 'before_paragraph') {
+        tr = tr.insert(range.from, createParagraphNodes(state.schema, options.text));
+      } else if (position === 'after_paragraph') {
+        tr = tr.insert(range.to, createParagraphNodes(state.schema, options.text));
+      } else {
+        return false;
+      }
+    }
+
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
+    return true;
+  }
+
+  function replaceTextDirect(options: {
+    paraId: string;
+    search: string;
+    replaceWith: string;
+  }): boolean {
+    const view = pagedEditorRef.current?.getView();
+    if (!view || !options.paraId || !options.search || typeof options.replaceWith !== 'string') {
+      return false;
+    }
+
+    const range = findParaIdRange(view.state.doc, options.paraId);
+    if (!range) return false;
+    const textRange = findTextInPmParagraph(view.state.doc, range.from, range.to, options.search);
+    if (!textRange) return false;
+
+    const tr = options.replaceWith
+      ? view.state.tr.insertText(options.replaceWith, textRange.from, textRange.to)
+      : view.state.tr.delete(textRange.from, textRange.to);
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
+    return true;
+  }
+
   useImperativeHandle(
     ref,
     () => ({
@@ -229,6 +324,10 @@ export function useDocxEditorRefApi({
         setShowCommentsSidebar(true);
         return true;
       },
+
+      insertText: insertTextDirect,
+
+      replaceText: replaceTextDirect,
 
       applyFormatting: (options) => {
         const view = pagedEditorRef.current?.getView();

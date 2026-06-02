@@ -49,8 +49,14 @@ function makeBridge(): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertText: () => true,
+    replaceText: () => true,
     insertTable: () => true,
     insertImage: () => true,
+    getContentControls: () => [],
+    setContentControl: () => true,
+    removeContentControl: () => true,
+    scrollToContentControl: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -202,7 +208,12 @@ describe('runStdioServer — error & lifecycle', () => {
     input.emit('data', '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
     const reply = parseLine(output.lines()[0]) as JsonRpcSuccess;
     const result = reply.result as { tools: Array<{ name: string }> };
-    expect(result.tools.length).toBe(16);
+    expect(result.tools.length).toBe(20);
+    const names = result.tools.map((t) => t.name);
+    expect(names).toContain('insert_text');
+    expect(names).toContain('replace_text');
+    expect(names).toContain('read_content_controls');
+    expect(names).toContain('set_content_control');
   });
 });
 

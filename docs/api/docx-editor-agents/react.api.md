@@ -148,6 +148,49 @@ export interface AgentToolResult {
 }
 
 // @public
+export interface ContentControlFilter {
+    // (undocumented)
+    alias?: string;
+    // (undocumented)
+    id?: number;
+    // (undocumented)
+    tag?: string;
+    // (undocumented)
+    type?: ContentControlType;
+}
+
+// @public (undocumented)
+export interface ContentControlInfo extends ContentControlFilter {
+    // (undocumented)
+    checked?: boolean;
+    // (undocumented)
+    dataBinding?: {
+        xpath?: string;
+        storeItemID?: string;
+        prefixMappings?: string;
+    };
+    // (undocumented)
+    dateFormat?: string;
+    // (undocumented)
+    depth?: number;
+    // (undocumented)
+    listItems?: {
+        displayText: string;
+        value: string;
+    }[];
+    // (undocumented)
+    lock?: 'sdtLocked' | 'contentLocked' | 'sdtContentLocked' | 'unlocked';
+    // (undocumented)
+    pos?: number;
+    // (undocumented)
+    sdtType: ContentControlType;
+    // (undocumented)
+    showingPlaceholder?: boolean;
+    // (undocumented)
+    text: string;
+}
+
+// @public
 export interface EditorRefLike {
     // (undocumented)
     addComment(options: {
@@ -175,6 +218,7 @@ export interface EditorRefLike {
         content: unknown[];
         done?: boolean;
     }>;
+    getContentControls?(filter?: ContentControlFilter): ContentControlInfo[];
     getCurrentPage(): number;
     // (undocumented)
     getDocument(): unknown | null;
@@ -188,6 +232,7 @@ export interface EditorRefLike {
     getTotalPages(): number;
     insertImage?(options: InsertImageOptions): boolean;
     insertTable?(options: InsertTableOptions): boolean;
+    insertText?(options: InsertTextOptions): boolean;
     // (undocumented)
     onContentChange(listener: (doc: unknown) => void): () => void;
     // (undocumented)
@@ -199,12 +244,21 @@ export interface EditorRefLike {
         replaceWith: string;
         author: string;
     }): boolean;
+    removeContentControl?(filter: ContentControlFilter, options?: {
+        force?: boolean;
+        keepContent?: boolean;
+    }): boolean;
+    replaceText?(options: ReplaceTextOptions): boolean;
     // (undocumented)
     replyToComment(commentId: number, text: string, author: string): number | null;
     // (undocumented)
     resolveComment(commentId: number): void;
+    scrollToContentControl?(filter: ContentControlFilter): boolean;
     // (undocumented)
     scrollToParaId(paraId: string): boolean;
+    setContentControlContent?(filter: ContentControlFilter, text: string, options?: {
+        force?: boolean;
+    }): boolean;
     setParagraphStyle(options: {
         paraId: string;
         styleId: string;
@@ -239,6 +293,34 @@ export interface InsertTableOptions {
     paraId?: string;
     // (undocumented)
     rows: number;
+}
+
+// @public
+export interface InsertTextOptions {
+    paraId?: string;
+    placement?: InsertTextPlacement;
+    position?: InsertTextPosition;
+    search?: string;
+    // (undocumented)
+    text: string;
+}
+
+// @public
+export interface ReplaceTextOptions {
+    // (undocumented)
+    paraId: string;
+    // (undocumented)
+    replaceWith: string;
+    // (undocumented)
+    search: string;
+}
+
+// @public (undocumented)
+export interface SetContentControlOptions extends ContentControlFilter {
+    // (undocumented)
+    force?: boolean;
+    // (undocumented)
+    text: string;
 }
 
 // @public

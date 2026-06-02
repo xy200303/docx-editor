@@ -18,9 +18,11 @@
  * | `range.insertComment(text)`         | `addComment({paraId, text, search?})` |
  * | `comment.reply(text)`               | `replyTo(commentId, {text})`          |
  * | `comment.resolved = true`           | `resolveComment(commentId)`           |
- * | `range.insertText(text, location)`  | `proposeChange({paraId, search, replaceWith})` (3 modes via empty-string semantics) |
+ * | `range.insertText(text, location)`  | `insertText({text, paraId?, position?, search?, placement?})` |
+ * | tracked review suggestion          | `proposeChange({paraId, search, replaceWith})` (3 modes via empty-string semantics) |
  * | `document.getSelection()`           | `getSelection() → SelectionInfo|null` |
  * | `range.scrollIntoView()`            | `scrollTo(paraId)`                    |
+ * | `contentControls.getByTag(...)`     | `getContentControls(filter?)` / `setContentControl(...)` |
  * | `commentCollection.getItems()`      | `getComments(filter?)`                |
  * | `body.paragraphs.getItems()`        | `getContent(opts?)`                   |
  * | `document.body.text`                | `getContentAsText(opts?)`             |
@@ -40,14 +42,9 @@
  *
  * ## Differences (intentional, documented)
  *
- *  - All "insertText" overloads collapse into `proposeChange` with empty-string
- *    semantics: replaceWith="" deletes; search="" inserts at paragraph end;
- *    both non-empty replaces. Word has separate `insertText(...,'Replace')`,
- *    `insertText(...,'Before')`, etc.; we found three modes were enough and
- *    serialize cleaner for LLM tool calls.
- *  - Tracked changes are always *suggestions* in our world. Word lets the
- *    range mutate directly; we always go through the tracked-change path so
- *    the human keeps the final say. (This matches the agent UX.)
+ *  - Direct edits and tracked suggestions are separate verbs. Normal writing
+ *    uses `insertText` / `replaceText`; review workflows use `proposeChange`
+ *    so the human can accept or reject.
  *  - Word's `Range.context.sync()` is unnecessary — every call is one PM
  *    transaction.
  *  - Word's `Range` is a stateful object. Ours is a plain `{paraId, search?}`
@@ -55,11 +52,10 @@
  *
  * ## Out of scope (gaps we deliberately don't implement)
  *
- *  - Paragraph creation (`body.insertParagraph`). Out of scope for v1.
  *  - Table mutation after insertion (insert row/col, delete cell).
  *  - Headers / footers / sections.
  *  - `Range.getOoxml()` / `getHtml()`. Plain text only.
- *  - `customXmlParts` / `contentControls`.
+ *  - `customXmlParts`.
  *  - Accept / reject tracked changes. Human-only by design.
  *
  * Future versions can grow these by extending this interface — typecheck
@@ -81,8 +77,14 @@ import type {
   SelectionInfo,
   ApplyFormattingOptions,
   SetParagraphStyleOptions,
+  InsertTextOptions,
+  ReplaceTextOptions,
   InsertTableOptions,
   InsertImageOptions,
+  ContentControlFilter,
+  ContentControlInfo,
+  SetContentControlOptions,
+  RemoveContentControlOptions,
   PageContent,
 } from './types';
 
@@ -114,7 +116,7 @@ export interface WordCompatBridge {
   /** Word: `document.getSelection()`. */
   getSelection(): SelectionInfo | null;
 
-  // ── Mutate (always tracked-change-style suggestions) ─────────────────────
+  // ── Mutate ──────────────────────────────────────────────────────────────
 
   /** Word: `range.insertComment(text)`. Anchored by paraId (Range handle). */
   addComment(options: AddCommentByParaIdOptions): number | null;
@@ -126,12 +128,26 @@ export interface WordCompatBridge {
   resolveComment(commentId: number): void;
 
   /**
-   * Word: `range.insertText(text, location)` collapsed into one verb.
+   * Tracked review suggestion. Uses the same anchoring model as
+   * `range.insertText(text, location)`, but produces accept/reject-able
+   * revision marks instead of directly mutating the document.
    *  - replacement: search non-empty, replaceWith non-empty
    *  - deletion:    search non-empty, replaceWith ""
    *  - insertion:   search "",        replaceWith non-empty (paragraph end)
    */
   proposeChange(options: ProposeChangeOptions): boolean;
+
+  /**
+   * Word: `range.insertText(text, location)`.
+   * Direct edit; no comments or tracked-change marks.
+   */
+  insertText(options: InsertTextOptions): boolean;
+
+  /**
+   * Word: `range.insertText(text, 'Replace')` for a unique phrase.
+   * Direct edit; `replaceWith: ""` deletes the matched text.
+   */
+  replaceText(options: ReplaceTextOptions): boolean;
 
   /**
    * Word: `range.font.bold = true` / `range.font.italic = true` / etc.
@@ -154,6 +170,18 @@ export interface WordCompatBridge {
    * Accepts a data URL so DOCX export can embed the binary image.
    */
   insertImage(options: InsertImageOptions): boolean;
+
+  /** Word: `contentControls.getByTag(...)` / `getByTitle(...)`. */
+  getContentControls(filter?: ContentControlFilter): ContentControlInfo[];
+
+  /** Word: `contentControl.insertText(text, 'Replace')`. */
+  setContentControl(options: SetContentControlOptions): boolean;
+
+  /** Word: `contentControl.delete(...)`. */
+  removeContentControl(options: RemoveContentControlOptions): boolean;
+
+  /** Word: `contentControl.select()` / `range.scrollIntoView()`. */
+  scrollToContentControl(filter: ContentControlFilter): boolean;
 
   // ── Paged document affordances (no Word equivalent) ─────────────────────
 

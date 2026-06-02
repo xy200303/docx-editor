@@ -25,8 +25,14 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
     proposeChange: () => true,
     applyFormatting: () => true,
     setParagraphStyle: () => true,
+    insertText: () => true,
+    replaceText: () => true,
     insertTable: () => true,
     insertImage: () => true,
+    getContentControls: () => [],
+    setContentControl: () => true,
+    removeContentControl: () => true,
+    scrollToContentControl: () => true,
     getPage: () => null,
     getPages: () => [],
     getTotalPages: () => 0,
@@ -43,8 +49,8 @@ function makeBridge(overrides: Partial<EditorBridge> = {}): EditorBridge {
 // ============================================================================
 
 describe('agentTools', () => {
-  test('has 16 built-in tools', () => {
-    expect(agentTools).toHaveLength(16);
+  test('has 20 built-in tools', () => {
+    expect(agentTools).toHaveLength(20);
   });
 
   test('all tools have name, description, inputSchema, handler', () => {
@@ -70,15 +76,19 @@ describe('agentTools', () => {
         'find_text',
         'insert_image',
         'insert_table',
+        'insert_text',
         'read_changes',
         'read_comments',
+        'read_content_controls',
         'read_document',
         'read_page',
         'read_pages',
         'read_selection',
+        'replace_text',
         'reply_comment',
         'resolve_comment',
         'scroll',
+        'set_content_control',
         'set_paragraph_style',
         'suggest_change',
       ].sort()
@@ -93,7 +103,7 @@ describe('agentTools', () => {
 describe('getToolSchemas', () => {
   test('returns OpenAI function calling format', () => {
     const schemas = getToolSchemas();
-    expect(schemas.length).toBe(16);
+    expect(schemas.length).toBe(20);
 
     for (const schema of schemas) {
       expect(schema.type).toBe('function');
@@ -289,6 +299,51 @@ describe('read_changes', () => {
   });
 });
 
+describe('read_content_controls', () => {
+  test('lists SDT anchors and forwards filters', () => {
+    let captured: unknown;
+    const bridge = makeBridge({
+      getContentControls: (filter) => {
+        captured = filter;
+        return [
+          {
+            tag: 'summary',
+            alias: 'Executive Summary',
+            id: 7,
+            type: 'richText',
+            sdtType: 'richText',
+            text: 'Old summary',
+          },
+        ];
+      },
+    });
+    const result = executeToolCall(
+      'read_content_controls',
+      { tag: 'summary', type: 'richText' },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({ tag: 'summary', type: 'richText' });
+    expect(result.data).toEqual([
+      {
+        tag: 'summary',
+        alias: 'Executive Summary',
+        id: 7,
+        type: 'richText',
+        lock: undefined,
+        showingPlaceholder: undefined,
+        text: 'Old summary',
+      },
+    ]);
+  });
+
+  test('rejects invalid content-control type', () => {
+    const result = executeToolCall('read_content_controls', { type: 'madeUpType' }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('type');
+  });
+});
+
 // ============================================================================
 // add_comment
 // ============================================================================
@@ -363,6 +418,107 @@ describe('suggest_change', () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain('paraId');
+  });
+});
+
+// ============================================================================
+// insert_text / replace_text / set_content_control
+// ============================================================================
+
+describe('insert_text', () => {
+  test('passes direct insert options through to the bridge', () => {
+    let captured: Parameters<EditorBridge['insertText']>[0] | undefined;
+    const bridge = makeBridge({
+      insertText: (opts) => {
+        captured = opts;
+        return true;
+      },
+    });
+    const result = executeToolCall(
+      'insert_text',
+      {
+        paraId: 'p_a3f',
+        text: ' added',
+        search: 'Hello',
+        placement: 'after',
+      },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({
+      paraId: 'p_a3f',
+      text: ' added',
+      search: 'Hello',
+      placement: 'after',
+      position: undefined,
+    });
+  });
+
+  test('requires paraId when search is supplied', () => {
+    const result = executeToolCall('insert_text', { text: 'x', search: 'Hello' }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('paraId');
+  });
+
+  test('rejects unsupported placement', () => {
+    const result = executeToolCall('insert_text', { text: 'x', placement: 'middle' }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('placement');
+  });
+});
+
+describe('replace_text', () => {
+  test('passes direct replacement through to the bridge', () => {
+    let captured: Parameters<EditorBridge['replaceText']>[0] | undefined;
+    const bridge = makeBridge({
+      replaceText: (opts) => {
+        captured = opts;
+        return true;
+      },
+    });
+    const result = executeToolCall(
+      'replace_text',
+      { paraId: 'p_a3f', search: 'Hello', replaceWith: 'Hi' },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({ paraId: 'p_a3f', search: 'Hello', replaceWith: 'Hi' });
+  });
+
+  test('allows empty replaceWith as direct deletion', () => {
+    const bridge = makeBridge({ replaceText: () => true });
+    const result = executeToolCall(
+      'replace_text',
+      { paraId: 'p_a3f', search: 'Hello', replaceWith: '' },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(result.data as string).toContain('Deleted');
+  });
+});
+
+describe('set_content_control', () => {
+  test('fills SDT content by tag', () => {
+    let captured: Parameters<EditorBridge['setContentControl']>[0] | undefined;
+    const bridge = makeBridge({
+      setContentControl: (opts) => {
+        captured = opts;
+        return true;
+      },
+    });
+    const result = executeToolCall(
+      'set_content_control',
+      { tag: 'summary', text: 'New summary' },
+      bridge
+    );
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({ tag: 'summary', text: 'New summary', force: undefined });
+  });
+
+  test('requires at least one SDT anchor', () => {
+    const result = executeToolCall('set_content_control', { text: 'x' }, makeBridge());
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('tag');
   });
 });
 

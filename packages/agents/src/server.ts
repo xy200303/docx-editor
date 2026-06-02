@@ -51,7 +51,12 @@ export type { EditorBridge } from './bridge';
 // using `useDocxAgentTools().getContext()`.
 export type {
   AgentContextSnapshot,
+  ContentControlFilter,
+  ContentControlInfo,
   InsertImageOptions,
   InsertTableOptions,
+  InsertTextOptions,
+  ReplaceTextOptions,
   SelectionInfo,
+  SetContentControlOptions,
 } from './types';

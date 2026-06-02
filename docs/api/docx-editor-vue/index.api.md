@@ -97,6 +97,18 @@ export type DocxEditorRef = EditorRefLike & {
         height?: number;
         paraId?: string;
     }): boolean;
+    insertText(options: {
+        text: string;
+        paraId?: string;
+        position?: 'cursor' | 'paragraph_start' | 'paragraph_end' | 'before_paragraph' | 'after_paragraph';
+        search?: string;
+        placement?: 'before' | 'after' | 'replace';
+    }): boolean;
+    replaceText(options: {
+        paraId: string;
+        search: string;
+        replaceWith: string;
+    }): boolean;
     openPrintPreview(): void;
     print(): void;
     loadDocument(doc: Document_2): void;

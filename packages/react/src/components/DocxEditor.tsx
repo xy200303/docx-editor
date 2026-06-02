@@ -360,6 +360,26 @@ export interface DocxEditorRef {
     replaceWith: string;
     author: string;
   }) => boolean;
+  /**
+   * Directly insert text without creating comments or tracked changes. Omit
+   * `paraId` to insert at the current cursor/selection. With `paraId`, the
+   * default position is paragraph_end. With `search`, insert before/after or
+   * replace that unique phrase inside the paragraph.
+   */
+  insertText: (options: {
+    text: string;
+    paraId?: string;
+    position?:
+      | 'cursor'
+      | 'paragraph_start'
+      | 'paragraph_end'
+      | 'before_paragraph'
+      | 'after_paragraph';
+    search?: string;
+    placement?: 'before' | 'after' | 'replace';
+  }) => boolean;
+  /** Directly replace/delete a unique phrase without tracked changes. */
+  replaceText: (options: { paraId: string; search: string; replaceWith: string }) => boolean;
   /** Locate every paragraph containing `query` (case-insensitive substring).
    * Returns a stable handle (paraId + the matched phrase) the agent can pass
    * back to `addComment` / `proposeChange`. */
