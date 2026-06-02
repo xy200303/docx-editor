@@ -13,6 +13,7 @@ import {
   findContentControlPos,
   setContentControlContentTr,
   removeContentControlTr,
+  setContentControlValueTr,
 } from '../contentControls';
 import {
   ContentControlNotFoundError,
@@ -104,6 +105,68 @@ describe('PM content-control addressing', () => {
     expect(findContentControlsInPM(state.apply(tr).doc, { tag: 'choice' })[0].text).toBe(
       'Archived'
     );
+  });
+
+  test('setContentControlValueTr toggles a checkbox: content glyph + checked attr', () => {
+    const doc = schema.nodes.doc.create(null, [
+      blockSdt(
+        {
+          sdtType: 'checkbox',
+          tag: 'agree',
+          checked: false,
+          rawPropertiesXml:
+            '<w:sdtPr><w14:checkbox><w14:checked w14:val="0"/>' +
+            '<w14:checkedState w14:val="2612"/><w14:uncheckedState w14:val="2610"/>' +
+            '</w14:checkbox></w:sdtPr>',
+        },
+        String.fromCodePoint(0x2610)
+      ),
+    ]);
+    const state = EditorState.create({ schema, doc });
+    const next = state.apply(
+      setContentControlValueTr(
+        state,
+        { tag: 'agree' },
+        {
+          kind: 'checkbox',
+          checked: true,
+        }
+      )
+    );
+    const node = next.doc.firstChild!;
+    expect(node.attrs.checked).toBe(true);
+    expect(node.textContent).toBe(String.fromCodePoint(0x2612));
+    expect(String(node.attrs.rawPropertiesXml)).toContain('w14:val="1"');
+  });
+
+  test('setContentControlValueTr selects a dropdown item by value', () => {
+    const doc = schema.nodes.doc.create(null, [
+      blockSdt(
+        {
+          sdtType: 'dropDownList',
+          tag: 'status',
+          listItems: JSON.stringify([
+            { displayText: 'Draft', value: '1' },
+            { displayText: 'Final', value: '2' },
+          ]),
+          rawPropertiesXml: '<w:sdtPr><w:dropDownList w:lastValue="1"/></w:sdtPr>',
+        },
+        'Draft'
+      ),
+    ]);
+    const state = EditorState.create({ schema, doc });
+    const next = state.apply(
+      setContentControlValueTr(
+        state,
+        { tag: 'status' },
+        {
+          kind: 'dropdown',
+          value: '2',
+        }
+      )
+    );
+    expect(next.doc.firstChild!.textContent).toBe('Final');
+    expect(String(next.doc.firstChild!.attrs.rawPropertiesXml)).toContain('w:lastValue="2"');
   });
 
   test('clears the showingPlaceholder attr when filling a placeholder control', () => {

@@ -117,3 +117,16 @@ export {
   type ContentControlFilter,
   type ContentControlInfo,
 } from './contentControls';
+export {
+  setContentControlValue,
+  formatSdtDate,
+  ContentControlValueError,
+  type ContentControlValue,
+} from './contentControlValues';
+export {
+  addRepeatingSectionItem,
+  removeRepeatingSectionItem,
+  isRepeatingSection,
+  isRepeatingSectionItem,
+  RepeatingSectionError,
+} from './repeatingSection';

@@ -78,11 +78,65 @@ export function renderSdtBoundaryBoxes(
       label.textContent = labelText;
       box.appendChild(label);
     }
+
+    // Interactive trigger for typed controls (checkbox/dropdown/date). The
+    // adapter (React/Vue) attaches a delegated click handler that toggles a
+    // checkbox or opens a dropdown/date popup and calls setContentControlValue.
+    // pointer-events are re-enabled on the trigger (the box itself is none).
+    const widget = widgetKindFor(group.sdtType);
+    if (
+      widget &&
+      group.tag != null &&
+      !group.bound &&
+      group.lock !== 'contentLocked' &&
+      group.lock !== 'sdtContentLocked'
+    ) {
+      const trigger = doc.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'layout-sdt-widget';
+      trigger.dataset.sdtWidget = widget;
+      trigger.dataset.sdtTag = group.tag;
+      trigger.dataset.sdtGroupId = group.id;
+      trigger.setAttribute('aria-label', `${widget} control ${group.alias || group.tag}`);
+      if (widget === 'dropdown') trigger.setAttribute('aria-haspopup', 'listbox');
+      else if (widget === 'date') trigger.setAttribute('aria-haspopup', 'dialog');
+      // The checkbox trigger mirrors the live state (☒ checked / ☐ unchecked) so
+      // the affordance never contradicts the box's content.
+      trigger.textContent =
+        widget === 'dropdown' ? '▾' : widget === 'date' ? '📅' : group.checked ? '☒' : '☐';
+      box.appendChild(trigger);
+    }
+
+    // Repeating-section item: add (＋) / remove (✕) affordances, like Word.
+    if (group.repeatingItem && !group.bound) {
+      const controls = doc.createElement('div');
+      controls.className = 'layout-sdt-repeat-controls';
+      for (const op of ['add', 'remove'] as const) {
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.className = 'layout-sdt-repeat-btn';
+        btn.dataset.sdtRepeat = op;
+        btn.dataset.sdtGroupId = group.id;
+        btn.setAttribute('aria-label', op === 'add' ? 'Add item' : 'Remove item');
+        btn.textContent = op === 'add' ? '＋' : '✕';
+        controls.appendChild(btn);
+      }
+      box.appendChild(controls);
+    }
+
     contentEl.appendChild(box);
     boxEls.push(box);
   }
 
   attachSdtHoverReveal(contentEl, boxEls);
+}
+
+/** The interactive widget kind for a control type, or null if it has none. */
+export function widgetKindFor(sdtType: string): 'checkbox' | 'dropdown' | 'date' | null {
+  if (sdtType === 'checkbox') return 'checkbox';
+  if (sdtType === 'dropDownList' || sdtType === 'comboBox') return 'dropdown';
+  if (sdtType === 'date') return 'date';
+  return null;
 }
 
 /**
@@ -104,7 +158,23 @@ function attachSdtHoverReveal(contentEl: HTMLElement, boxEls: HTMLElement[]): vo
       if (inside !== b.classList.contains('is-active')) b.classList.toggle('is-active', inside);
     }
   };
-  contentEl.addEventListener('mousemove', (e) => setActive(e.clientX, e.clientY));
+  // Coalesce mousemove into one rect-read pass per animation frame, so a fast
+  // pointer over a control-dense page doesn't force a reflow per event.
+  const raf =
+    typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb: () => void) => cb();
+  let queued = false;
+  let lastX = 0;
+  let lastY = 0;
+  contentEl.addEventListener('mousemove', (e) => {
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (queued) return;
+    queued = true;
+    raf(() => {
+      queued = false;
+      setActive(lastX, lastY);
+    });
+  });
   contentEl.addEventListener('mouseleave', () => {
     for (const b of boxEls) b.classList.remove('is-active');
   });

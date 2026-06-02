@@ -18,9 +18,17 @@ import {
   isTextReplaceable,
   isContentLocked,
   isDeletionLocked,
+  isDataBound,
   clearShowingPlaceholderXml,
   type ContentControlFilter,
 } from '../agent/contentControls';
+import { applyContentControlValue, type ContentControlValue } from '../agent/contentControlValues';
+import {
+  RepeatingSectionError,
+  rawIsRepeatingSectionItem,
+  patchRawId,
+} from '../agent/repeatingSection';
+import { sdtAttrsToProps, sdtPropsToAttrs } from './conversion/sdtAttrs';
 import type { SdtType, SdtProperties, SdtDataBinding } from '../types/document';
 
 /** A control discovered in the PM doc, with its PM position for scroll/edit. */
@@ -40,6 +48,8 @@ export interface PMContentControl {
   listItems?: { displayText: string; value: string }[];
   /** XML data binding (`w:dataBinding`), if the control is bound. */
   dataBinding?: SdtDataBinding;
+  /** Current date value (ISO `yyyy-mm-dd`) for a date control, from `w:fullDate`. */
+  dateValue?: string;
   /** Plain text of the control's content. */
   text: string;
   /** PM position of the `blockSdt` node (its `before` position). */
@@ -79,6 +89,9 @@ function controlInfo(node: PMNode, pos: number, depth: number): PMContentControl
     dateFormat: a.dateFormat != null ? String(a.dateFormat) : undefined,
     listItems: parseAttrJson<{ displayText: string; value: string }[]>(a.listItems),
     dataBinding: parseAttrJson<SdtDataBinding>(a.dataBinding),
+    dateValue: /<w:date\b[^>]*\bw:fullDate="(\d{4}-\d{2}-\d{2})/.exec(
+      String(a.rawPropertiesXml ?? '')
+    )?.[1],
     text: node.textBetween(0, node.content.size, '\n'),
     pos,
     depth,
@@ -209,4 +222,136 @@ export function removeContentControlTr(
   return options.keepContent
     ? state.tr.replaceWith(start, end, target.node.content)
     : state.tr.delete(start, end);
+}
+
+/**
+ * Build a transaction that applies a typed value (dropdown selection, checkbox
+ * toggle, or date) to the first control matching `filter`, updating both the
+ * visible content and the control's structured attrs (checked / raw w:sdtPr).
+ * Reuses the headless value-applier so the live editor and headless paths agree.
+ * Throws as the headless {@link setContentControlValue} does.
+ */
+export function setContentControlValueTr(
+  state: EditorState,
+  filter: ContentControlFilter,
+  value: ContentControlValue,
+  options: { force?: boolean } = {}
+): Transaction {
+  const target = locate(state.doc, filter);
+  if (!target) throw new ContentControlNotFoundError(filter);
+  const props = sdtAttrsToProps(target.node.attrs as Record<string, unknown>);
+  if (!options.force && isContentLocked(props.lock)) {
+    throw new ContentControlLockedError(props.lock, 'edit');
+  }
+  if (!options.force && isDataBound(props)) {
+    throw new ContentControlBoundError();
+  }
+  const { properties, content } = applyContentControlValue(props, value);
+  const { schema } = state;
+  const fontMark = schema.marks.fontFamily;
+  const paragraphs = content.map((block) => {
+    if (block.type !== 'paragraph') return schema.nodes.paragraph.create(null, null);
+    const run = block.content.find((r) => r.type === 'run');
+    const text =
+      run?.type === 'run' ? run.content.map((t) => ('text' in t ? t.text : '')).join('') : '';
+    // Carry the glyph font (e.g. checkbox symbol font) as a fontFamily mark.
+    const font = run?.type === 'run' ? run.formatting?.fontFamily : undefined;
+    const marks = font && fontMark ? [fontMark.create(font)] : undefined;
+    return schema.nodes.paragraph.create(null, text ? schema.text(text, marks) : null);
+  });
+  const from = target.pos + 1;
+  const to = target.pos + 1 + target.node.content.size;
+  const tr = state.tr.replaceWith(from, to, paragraphs);
+  // Sync structured attrs (checked / rawPropertiesXml); node start is stable.
+  tr.setNodeMarkup(target.pos, undefined, {
+    ...(target.node.attrs as Record<string, unknown>),
+    ...sdtPropsToAttrs(properties),
+  });
+  return tr;
+}
+
+// ── repeating sections (w15:repeatingSection) ───────────────────────────────
+
+/** Highest blockSdt `id` attr in the doc, for minting a fresh unique one. */
+function maxPmControlId(doc: PMNode): number {
+  let max = 0;
+  doc.descendants((n) => {
+    if (n.type.name === 'blockSdt' && typeof n.attrs.id === 'number') {
+      max = Math.max(max, n.attrs.id);
+    }
+    return true;
+  });
+  return max;
+}
+
+/** Clone a repeating-section item node, assigning fresh ids to it + nested controls. */
+function cloneItemNode(schema: EditorState['schema'], item: PMNode, startId: number): PMNode {
+  let id = startId;
+  type JsonNode = { type: string; attrs?: Record<string, unknown>; content?: JsonNode[] };
+  const json = item.toJSON() as JsonNode;
+  const walk = (n: JsonNode): void => {
+    if (n.type === 'blockSdt' && n.attrs) {
+      const newId = ++id;
+      n.attrs = {
+        ...n.attrs,
+        id: newId,
+        rawPropertiesXml: patchRawId(
+          n.attrs.rawPropertiesXml == null ? undefined : String(n.attrs.rawPropertiesXml),
+          newId
+        ),
+      };
+    }
+    n.content?.forEach(walk);
+  };
+  walk(json);
+  return schema.nodeFromJSON(json);
+}
+
+/**
+ * Build a transaction that adds a repeating-section item by cloning the item at
+ * `itemPos` (its blockSdt `before` position) and inserting the copy after it.
+ * Throws {@link RepeatingSectionError} if `itemPos` isn't a repeating item.
+ */
+export function addRepeatingSectionItemTr(state: EditorState, itemPos: number): Transaction {
+  const item = state.doc.nodeAt(itemPos);
+  if (
+    !item ||
+    item.type.name !== 'blockSdt' ||
+    !rawIsRepeatingSectionItem(String(item.attrs.rawPropertiesXml ?? ''))
+  ) {
+    throw new RepeatingSectionError('Position is not a repeating-section item.');
+  }
+  const clone = cloneItemNode(state.schema, item, maxPmControlId(state.doc));
+  return state.tr.insert(itemPos + item.nodeSize, clone);
+}
+
+/**
+ * Build a transaction that removes the repeating-section item at `itemPos`.
+ * Throws {@link RepeatingSectionError} if it isn't an item or is the only one in
+ * its section.
+ */
+export function removeRepeatingSectionItemTr(state: EditorState, itemPos: number): Transaction {
+  const item = state.doc.nodeAt(itemPos);
+  if (
+    !item ||
+    item.type.name !== 'blockSdt' ||
+    !rawIsRepeatingSectionItem(String(item.attrs.rawPropertiesXml ?? ''))
+  ) {
+    throw new RepeatingSectionError('Position is not a repeating-section item.');
+  }
+  const $pos = state.doc.resolve(itemPos);
+  const parent = $pos.parent;
+  let siblings = 0;
+  parent.forEach((child) => {
+    if (
+      child.type.name === 'blockSdt' &&
+      rawIsRepeatingSectionItem(String(child.attrs.rawPropertiesXml ?? ''))
+    ) {
+      siblings += 1;
+    }
+  });
+  if (siblings <= 1) {
+    throw new RepeatingSectionError('Cannot remove the last item of a repeating section.');
+  }
+  return state.tr.delete(itemPos, itemPos + item.nodeSize);
 }

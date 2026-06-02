@@ -587,10 +587,9 @@ export type TextBoxBlock = {
 };
 
 /**
- * Identity of a block-level Structured Document Tag (content control) that
- * encloses a run of flow blocks. Block SDTs are flattened into their child
- * flow blocks for pagination (a control may span pages); each child carries
- * its enclosing group(s) so the painter can redraw the control boundary.
+ * Identity of a block-level Structured Document Tag (content control) enclosing
+ * a run of flow blocks. Block SDTs flatten into their child flow blocks for
+ * pagination; each child carries its group(s) so the painter draws the boundary.
  */
 export interface SdtGroup {
   id: string; // stable per-document id (derived from the PM node position)
@@ -598,6 +597,9 @@ export interface SdtGroup {
   tag?: string; // w:tag
   alias?: string; // w:alias
   lock?: string; // lock mode
+  checked?: boolean; // live checkbox glyph state
+  bound?: boolean; // data-bound (w:dataBinding): suppress the editable widget
+  repeatingItem?: boolean; // w15:repeatingSectionItem: show add/remove affordances
 }
 
 /**

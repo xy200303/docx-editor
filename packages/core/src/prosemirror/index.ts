@@ -169,6 +169,9 @@ export {
   findContentControlPos,
   setContentControlContentTr,
   removeContentControlTr,
+  setContentControlValueTr,
+  addRepeatingSectionItemTr,
+  removeRepeatingSectionItemTr,
   type PMContentControl,
 } from './contentControls';
 

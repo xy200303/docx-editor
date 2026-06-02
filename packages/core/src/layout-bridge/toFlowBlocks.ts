@@ -709,6 +709,11 @@ export function toFlowBlocks(doc: PMNode, options: ToFlowBlocksOptions = {}): Fl
         tag: a.tag != null ? String(a.tag) : undefined,
         alias: a.alias != null ? String(a.alias) : undefined,
         lock: a.lock != null ? String(a.lock) : undefined,
+        checked: typeof a.checked === 'boolean' ? a.checked : undefined,
+        bound: a.dataBinding != null ? true : undefined,
+        repeatingItem: /<w15:repeatingSectionItem[\s/>]/.test(String(a.rawPropertiesXml ?? ''))
+          ? true
+          : undefined,
       };
       const childGroups = [...sdtGroups, group];
       // Child PM position = SDT node start + 1 (enter the node) + child offset.

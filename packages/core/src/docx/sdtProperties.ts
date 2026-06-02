@@ -111,9 +111,13 @@ export function parseSdtProperties(
           props.showingPlaceholder = v == null || !/^(0|false|off)$/i.test(v);
           break;
         }
-        case 'date':
-          props.dateFormat = getAttribute(el, 'w', 'fullDate') ?? undefined;
+        case 'date': {
+          // The display format is the child <w:dateFormat w:val="..."/>, not
+          // the w:date@w:fullDate (which is the bound value).
+          const dateFormat = findChild(el, 'w', 'dateFormat');
+          if (dateFormat) props.dateFormat = getAttribute(dateFormat, 'w', 'val') ?? undefined;
           break;
+        }
         case 'dropDownList':
         case 'comboBox':
           props.listItems = parseListItems(el);

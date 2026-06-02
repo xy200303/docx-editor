@@ -133,6 +133,19 @@ export {
   type ContentControlFilter,
   type ContentControlInfo,
 } from './agent/contentControls';
+export {
+  setContentControlValue,
+  formatSdtDate,
+  ContentControlValueError,
+  type ContentControlValue,
+} from './agent/contentControlValues';
+export {
+  addRepeatingSectionItem,
+  removeRepeatingSectionItem,
+  isRepeatingSection,
+  isRepeatingSectionItem,
+  RepeatingSectionError,
+} from './agent/repeatingSection';
 
 // ============================================================================
 // PARSER / SERIALIZER

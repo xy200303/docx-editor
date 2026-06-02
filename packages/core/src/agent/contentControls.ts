@@ -296,7 +296,7 @@ function toBlocks(
   return replacement.split('\n').map(paragraph);
 }
 
-type ControlOp = (control: BlockSdt) => BlockContent[];
+export type ControlOp = (control: BlockSdt) => BlockContent[];
 
 /**
  * Rebuild `blocks`, applying `op` to the first control matching `filter`. The
@@ -305,7 +305,7 @@ type ControlOp = (control: BlockSdt) => BlockContent[];
  * remove/unwrap never leaves a placeholder behind. `state.done` stops the
  * walk after the first match.
  */
-function applyToFirst(
+export function applyToFirst(
   blocks: BlockContent[],
   filter: ContentControlFilter,
   op: ControlOp,
@@ -335,7 +335,7 @@ function applyToFirst(
   return out;
 }
 
-function rebuild(doc: Document, content: BlockContent[]): Document {
+export function rebuild(doc: Document, content: BlockContent[]): Document {
   return {
     ...doc,
     package: {
