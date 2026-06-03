@@ -27,8 +27,7 @@ import type {
   EndnotePosition,
   NoteNumberRestart,
   NumberFormat,
-  Paragraph,
-  Table,
+  BlockContent,
   Theme,
   RelationshipMap,
   MediaFile,
@@ -42,10 +41,10 @@ import {
   getAttribute,
   getChildElements,
   parseNumericAttribute,
+  elementToXml,
   type XmlElement,
 } from './xmlParser';
-import { parseParagraph } from './paragraphParser';
-import { parseTable } from './tableParser';
+import { parseBlockContent } from './blockContentParser';
 
 // ============================================================================
 // FOOTNOTE MAP INTERFACE
@@ -131,9 +130,32 @@ function parseNoteType(
 
 /**
  * Walk a footnote/endnote element's direct children in document order and
- * collect block content (paragraphs + tables). Per ECMA-376 §17.11.10 a
- * footnote can hold the same blocks as the body; preserving document order
- * matters when a footnote interleaves text with a table.
+ * collect block content. Per ECMA-376 §17.11.10 a footnote can hold the same
+ * blocks as the body, so this reuses the body's {@link parseBlockContent}: note
+ * bodies now carry the full block model — paragraphs, tables, and block-level
+ * `w:sdt` content controls (as `BlockSdt`) — and stay editable on round-trip
+ * rather than freezing to verbatim the moment a content control appears.
+ *
+ * `hasUnmodeled` flags the two block-level constructs common enough in real
+ * note bodies to be worth protecting and that still have no model carrier:
+ * note-level bookmarks (`w:bookmarkStart`/`w:bookmarkEnd`) and `w:customXml`.
+ * The caller uses it to verbatim-gate the note on serialize (#646 F3). `w:sdt`
+ * is NOT a trigger anymore — it round-trips through the model. Paragraph-
+ * internal bookmarks are likewise not flagged: they live inside `<w:p>` and
+ * already survive via `parseParagraph`; only block-level siblings regress.
+ *
+ * This is not an exhaustive gate. Per ECMA-376 §17.11 (CT_FtnEdn) a note may
+ * hold other block-level children the model also doesn't carry — `w:altChunk`,
+ * block-level track-change wrappers (`w:ins`/`w:del`/`w:moveFrom`/`w:moveTo`),
+ * move/permission range markers, `w:proofErr`. Those are dropped (not gated),
+ * exactly as the document body drops them via the shared `parseBlockContent`.
+ * Matching body behavior keeps notes and body consistent; gating every rare
+ * construct would freeze otherwise-editable notes for negligible benefit.
+ *
+ * Detection is also intentionally shallow — only the note's direct children are
+ * scanned, so a bookmark/customXml nested inside a modeled `w:sdt` is NOT gated
+ * and drops on round-trip, again matching the body. Gating it would freeze the
+ * editable sdt to verbatim, trading a common capability for a rare construct.
  */
 function parseNoteBlockContent(
   element: XmlElement,
@@ -142,17 +164,26 @@ function parseNoteBlockContent(
   numbering: NumberingMap | null,
   rels: RelationshipMap | null,
   media: Map<string, MediaFile> | null
-): (Paragraph | Table)[] {
-  const blocks: (Paragraph | Table)[] = [];
+): { blocks: BlockContent[]; hasUnmodeled: boolean } {
+  const blocks = parseBlockContent(element, styles, theme, numbering, rels, media);
+  let hasUnmodeled = false;
   for (const child of getChildElements(element)) {
     const name = child.name ?? '';
-    if (name === 'w:p') {
-      blocks.push(parseParagraph(child, styles, theme, numbering, rels));
-    } else if (name === 'w:tbl') {
-      blocks.push(parseTable(child, styles, theme, numbering, rels, media));
+    if (
+      name === 'w:bookmarkStart' ||
+      name.endsWith(':bookmarkStart') ||
+      name === 'w:bookmarkEnd' ||
+      name.endsWith(':bookmarkEnd') ||
+      name === 'w:customXml' ||
+      name.endsWith(':customXml')
+    ) {
+      // Still no model carrier — flag so the note is re-emitted verbatim on
+      // save rather than silently dropping the block.
+      hasUnmodeled = true;
+      break;
     }
   }
-  return blocks;
+  return { blocks, hasUnmodeled };
 }
 
 /**
@@ -170,13 +201,23 @@ function parseFootnote(
   const typeAttr = getAttribute(element, 'w', 'type');
   const noteType = parseNoteType(typeAttr);
 
-  const content = parseNoteBlockContent(element, styles, theme, numbering, rels, media);
+  const { blocks, hasUnmodeled } = parseNoteBlockContent(
+    element,
+    styles,
+    theme,
+    numbering,
+    rels,
+    media
+  );
 
   return {
     type: 'footnote',
     id,
     noteType,
-    content,
+    content: blocks,
+    // Verbatim-gate: capture original bytes when the body has an unmodeled
+    // block-level construct so the serializer can re-emit them losslessly.
+    ...(hasUnmodeled ? { verbatimXml: elementToXml(element) } : {}),
   };
 }
 
@@ -282,13 +323,22 @@ function parseEndnote(
   const typeAttr = getAttribute(element, 'w', 'type');
   const noteType = parseNoteType(typeAttr);
 
-  const content = parseNoteBlockContent(element, styles, theme, numbering, rels, media);
+  const { blocks, hasUnmodeled } = parseNoteBlockContent(
+    element,
+    styles,
+    theme,
+    numbering,
+    rels,
+    media
+  );
 
   return {
     type: 'endnote',
     id,
     noteType,
-    content,
+    content: blocks,
+    // Verbatim-gate — see parseFootnote (#646 F3).
+    ...(hasUnmodeled ? { verbatimXml: elementToXml(element) } : {}),
   };
 }
 

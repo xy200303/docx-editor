@@ -1,5 +1,11 @@
 # @eigenpal/docx-editor-core
 
+## 1.2.1
+
+### Patch Changes
+
+- 1c2b098: Fix printing blank pages past the first few in large documents. Virtualized off-screen pages were cloned as empty shells; print now forces every page to render first. Fixes #579
+
 ## 1.2.0
 
 ### Minor Changes
