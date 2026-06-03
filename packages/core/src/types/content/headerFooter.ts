@@ -82,12 +82,23 @@ export interface Footnote {
   noteType?: 'normal' | 'separator' | 'continuationSeparator' | 'continuationNotice';
   /**
    * Content. Per ECMA-376 §17.11.10 footnotes can hold the same blocks as
-   * the body — paragraphs and tables. The parser previously only collected
-   * <w:p> children which silently dropped any <w:tbl> inside a footnote;
-   * widened to match HeaderFooter / TableCell shape so the body pipeline
-   * (toProseDoc → toFlowBlocks) can render them uniformly.
+   * the body, so the note parser reuses the body's `parseBlockContent`: the
+   * full block model — paragraphs, tables, and block-level `w:sdt` content
+   * controls (as `BlockSdt`) — flows through the body pipeline
+   * (toProseDoc → toFlowBlocks) and stays editable on round-trip.
    */
   content: BlockContent[];
+  /**
+   * Verbatim original XML of the entire `<w:footnote>` element, captured at
+   * parse time ONLY when the note body carries a block-level construct the
+   * model still can't represent — note-level bookmarks
+   * (`w:bookmarkStart`/`w:bookmarkEnd`) or `w:customXml`. Block-level `w:sdt`
+   * is NOT a trigger: it round-trips through the model as `BlockSdt`. When
+   * present the serializer re-emits these bytes instead of rebuilding from
+   * `content`, restoring pre-#646 fidelity for the unmodeled constructs.
+   * See `parseNoteBlockContent` / `serializeNote` for the gate (#646 F3).
+   */
+  verbatimXml?: string;
 }
 
 /**
@@ -101,7 +112,10 @@ export interface Endnote {
   noteType?: 'normal' | 'separator' | 'continuationSeparator' | 'continuationNotice';
   /**
    * Content. Per ECMA-376 §17.11.4 endnotes can hold the same blocks as
-   * the body — paragraphs and tables. See note on `Footnote.content`.
+   * the body — paragraphs, tables, and block-level content controls. See note
+   * on `Footnote.content`.
    */
   content: BlockContent[];
+  /** Verbatim original XML — see `Footnote.verbatimXml` (#646 F3). */
+  verbatimXml?: string;
 }

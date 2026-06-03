@@ -250,7 +250,8 @@ export interface ReviewChange {
     date: string | null;
     // (undocumented)
     id: number;
-    // (undocumented)
+    noteId?: number;
+    noteType?: 'footnote' | 'endnote';
     paragraphIndex: number;
     // (undocumented)
     text: string;
