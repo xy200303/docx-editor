@@ -19,6 +19,7 @@ import { useOutlineSidebar } from './DocxEditor/hooks/useOutlineSidebar';
 import { useKeyboardShortcuts } from './DocxEditor/hooks/useKeyboardShortcuts';
 import { useFileIO } from './DocxEditor/hooks/useFileIO';
 import { usePageSetupControls } from './DocxEditor/hooks/usePageSetupControls';
+import { useWatermarkControls } from './DocxEditor/hooks/useWatermarkControls';
 import { useHyperlinkActions } from './DocxEditor/hooks/useHyperlinkActions';
 import { useFindReplaceBridge } from './DocxEditor/hooks/useFindReplaceBridge';
 import { useFormattingActions } from './DocxEditor/hooks/useFormattingActions';
@@ -1102,6 +1103,17 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     getActiveEditorView,
   });
 
+  const {
+    showWatermark,
+    setShowWatermark,
+    handleOpenWatermark,
+    currentWatermark,
+    handleWatermarkApply,
+  } = useWatermarkControls({
+    readOnly,
+    getBodyEditorView: () => pagedEditorRef.current?.getView(),
+  });
+
   const { scrollPageInfo, setScrollPageInfo } = useScrollPageInfo({
     scrollContainerRef,
     pagedEditorRef,
@@ -1621,6 +1633,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
             onImageTransform={handleImageTransform}
             onOpenImageProperties={handleOpenImageProperties}
             onPageSetup={handleOpenPageSetup}
+            onWatermark={handleOpenWatermark}
             onTableAction={handleTableAction}
           />
         ) : null
@@ -1744,6 +1757,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
           showPageSetup={showPageSetup}
           onPageSetupClose={() => setShowPageSetup(false)}
           onPageSetupApply={handlePageSetupApply}
+          showWatermark={showWatermark}
+          onWatermarkClose={() => setShowWatermark(false)}
+          onWatermarkApply={handleWatermarkApply}
+          currentWatermark={currentWatermark}
           document={history.state}
           footnotePropsOpen={footnotePropsOpen}
           onFootnotePropsClose={() => setFootnotePropsOpen(false)}

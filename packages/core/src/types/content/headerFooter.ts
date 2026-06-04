@@ -6,6 +6,7 @@
 
 import type { NumberFormat } from '../lists';
 import type { BlockContent } from './section';
+import type { Watermark } from './watermark';
 
 /**
  * Header/footer type
@@ -34,6 +35,12 @@ export interface HeaderFooter {
   hdrFtrType: HeaderFooterType;
   /** Content (paragraphs, tables, etc.) */
   content: BlockContent[];
+  /**
+   * Watermark stored on this header (MS Word "Design → Watermark"). Lives
+   * here, not in `content`, so it stays out of the editable text flow while
+   * still round-tripping. Only headers carry watermarks; footers never do.
+   */
+  watermark?: Watermark;
 }
 
 /**

@@ -11,8 +11,9 @@
 
 import type JSZip from 'jszip';
 import type { BlockContent, Image } from '../../types/content';
+import type { Document } from '../../types/document';
 import { RELATIONSHIP_TYPES } from '../relsParser';
-import { findMaxRId, readRelsOrStub, type Part } from './parts';
+import { findMaxRId, readRelsOrStub, headerFooterFilename, type Part } from './parts';
 
 /**
  * Get content type for a file extension. Falls back to the provided MIME type
@@ -213,6 +214,122 @@ export async function processNewImages(
       compression: 'DEFLATE',
       compressionOptions: { level: compressionLevel },
     });
+  }
+
+  await registerImageExtensions(zip, extensionsAdded, compressionLevel);
+}
+
+/** Normalize a rels Target to its `media/<file>` form for comparison. */
+function normalizeMediaTarget(target: string): string {
+  return target.replace(/^\.?\/?(?:word\/)?/, '');
+}
+
+/** Find an existing relationship id in a rels XML whose Target points at `mediaTarget`. */
+function findRelIdByMediaTarget(relsXml: string, mediaTarget: string): string | null {
+  const want = normalizeMediaTarget(mediaTarget);
+  const re = /<Relationship\b[^>]*?>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(relsXml)) !== null) {
+    const el = m[0];
+    const target = /Target="([^"]*)"/.exec(el)?.[1];
+    if (target && normalizeMediaTarget(target) === want) {
+      return /Id="([^"]*)"/.exec(el)?.[1] ?? null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Register picture-watermark images and bind each header's watermark to a
+ * relationship that resolves in **that header's** rels.
+ *
+ * A watermark is applied to several header parts (default/first/even), but a
+ * `<v:imagedata r:id>` is a header-part-local reference: the same rId is not
+ * valid across parts. So this runs per header and:
+ *
+ * - leaves a watermark alone when its `relId` already resolves in that header's
+ *   rels (parsed-from-file headers, and idempotent re-saves);
+ * - otherwise resolves the image bytes (an in-editor `data:` URL written once
+ *   per save, or an existing `mediaPath` from the original file) and binds the
+ *   watermark to a relationship in that header's rels — reusing an existing rel
+ *   to the same media when one is present, else adding a fresh one.
+ *
+ * Mutates each picture watermark's `relId` in place so the serializer emits a
+ * valid `<v:imagedata r:id="...">`.
+ */
+export async function processNewWatermarkImages(
+  doc: Document,
+  zip: JSZip,
+  compressionLevel: number
+): Promise<void> {
+  const headers = doc.package.headers;
+  const rels = doc.package.relationships;
+  if (!headers || !rels) return;
+
+  const extensionsAdded = new Set<string>();
+  // dataUrl -> media filename, so an image shared across headers is written once.
+  const writtenMedia = new Map<string, string>();
+  let maxImageNum = findMaxImageNum(zip);
+
+  /** Resolve (and write, if new) the media file this watermark references. */
+  function resolveMediaFilename(wm: { mediaPath?: string; dataUrl?: string }): string | null {
+    // Existing media already in the package (parsed from the original file).
+    if (wm.mediaPath) {
+      const fn = wm.mediaPath.split('/').pop();
+      if (fn) return fn;
+    }
+    // New image inserted in the editor — write the binary once, dedup by data URL.
+    if (wm.dataUrl && wm.dataUrl.startsWith('data:')) {
+      const cached = writtenMedia.get(wm.dataUrl);
+      if (cached) return cached;
+      const { data, extension } = decodeDataUrl(wm.dataUrl);
+      maxImageNum++;
+      const fn = `image${maxImageNum}.${extension}`;
+      zip.file(`word/media/${fn}`, data, {
+        compression: 'DEFLATE',
+        compressionOptions: { level: compressionLevel },
+      });
+      extensionsAdded.add(extension);
+      writtenMedia.set(wm.dataUrl, fn);
+      return fn;
+    }
+    return null;
+  }
+
+  for (const [rId, hf] of headers.entries()) {
+    const wm = hf.watermark;
+    if (!wm || wm.kind !== 'picture') continue;
+
+    const headerRel = rels.get(rId);
+    if (!headerRel?.target) continue;
+    const filename = headerFooterFilename(headerRel.target).replace(/^word\//, '');
+    const relsPath = `word/_rels/${filename}.rels`;
+    const relsXml = await readRelsOrStub(zip, relsPath);
+
+    // Keep the existing relId when it already resolves in this header's rels.
+    if (wm.relId && new RegExp(`Id="${wm.relId}"`).test(relsXml)) continue;
+
+    const mediaFilename = resolveMediaFilename(wm);
+    if (!mediaFilename) continue;
+    const target = `media/${mediaFilename}`;
+
+    const existingRId = findRelIdByMediaTarget(relsXml, target);
+    if (existingRId) {
+      wm.relId = existingRId;
+      continue;
+    }
+
+    const newRId = `rId${findMaxRId(relsXml) + 1}`;
+    const updatedRelsXml = relsXml.replace(
+      '</Relationships>',
+      `<Relationship Id="${newRId}" Type="${RELATIONSHIP_TYPES.image}" ` +
+        `Target="${target}"/></Relationships>`
+    );
+    zip.file(relsPath, updatedRelsXml, {
+      compression: 'DEFLATE',
+      compressionOptions: { level: compressionLevel },
+    });
+    wm.relId = newRId;
   }
 
   await registerImageExtensions(zip, extensionsAdded, compressionLevel);

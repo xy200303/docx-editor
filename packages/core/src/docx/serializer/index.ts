@@ -10,9 +10,9 @@
 export {
   serializeDocument,
   serializeDocumentBody,
-  serializeSectionProperties,
   serializeBlockContent,
 } from './documentSerializer';
+export { serializeSectionProperties } from './sectionPropertiesSerializer';
 export { serializeParagraph } from './paragraphSerializer';
 export { serializeRun } from './runSerializer';
 export { serializeTable } from './tableSerializer';

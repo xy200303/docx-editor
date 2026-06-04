@@ -32,8 +32,8 @@ export { parseDocx } from './docx/parser';
 export {
   serializeDocument as serializeDocx,
   serializeDocumentBody,
-  serializeSectionProperties,
 } from './docx/serializer/documentSerializer';
+export { serializeSectionProperties } from './docx/serializer/sectionPropertiesSerializer';
 export { repackDocx, createDocx, updateMultipleFiles } from './docx/rezip';
 export { attemptSelectiveSave } from './docx/selectiveSave';
 export { buildPatchedDocumentXml, validatePatchSafety } from './docx/selectiveXmlPatch';

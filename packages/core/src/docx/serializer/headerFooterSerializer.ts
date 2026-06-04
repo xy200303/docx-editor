@@ -14,6 +14,7 @@ import type { BlockContent, HeaderFooter } from '../../types/document';
 import { serializeParagraph } from './paragraphSerializer';
 import { serializeTable } from './tableSerializer';
 import { serializeBlockSdt } from './sdtSerializer';
+import { serializeWatermark } from './vmlWatermarkSerializer';
 
 // Minimal namespaces needed for header/footer XML
 const NAMESPACES: Record<string, string> = {
@@ -75,6 +76,12 @@ export function serializeHeaderFooter(hf: HeaderFooter): string {
 
   // Serialize content blocks
   let contentXml = hf.content.map((block) => serializeBlock(block)).join('');
+
+  // Prepend the watermark VML (Word stores it as the first run in the header)
+  // so it paints behind the body content.
+  if (hf.watermark) {
+    contentXml = serializeWatermark(hf.watermark) + contentXml;
+  }
 
   // Ensure at least one empty paragraph (required by OOXML spec)
   if (!contentXml) {

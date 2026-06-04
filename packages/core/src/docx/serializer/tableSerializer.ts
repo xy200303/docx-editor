@@ -30,13 +30,13 @@ import type {
   TableLook,
   CellMargins,
   FloatingTableProperties,
-  ConditionalFormatStyle,
   BorderSpec,
   ShadingProperties,
   Paragraph,
 } from '../../types/document';
 
 import { serializeParagraph } from './paragraphSerializer';
+import { serializeConditionalFormatStyle } from './conditionalFormatSerializer';
 import { escapeXml, intAttr } from './xmlUtils';
 
 function normalizeTrackedChangeInfo(info: { id: number; author: string; date?: string }): {
@@ -501,6 +501,14 @@ export function serializeTableRowFormatting(
   const parts: string[] = [];
 
   if (formatting) {
+    // Conditional format style (w:cnfStyle) — first child of CT_TrPr. Carries
+    // table-style row context (header row, banding) that Word resolves from
+    // the table style; dropping it degrades styled tables on round-trip.
+    const cnfStyleXml = serializeConditionalFormatStyle(formatting.conditionalFormat);
+    if (cnfStyleXml) {
+      parts.push(cnfStyleXml);
+    }
+
     // Can't split
     if (formatting.cantSplit) {
       parts.push('<w:cantSplit/>');
@@ -568,40 +576,6 @@ function serializeTableRowPropertyChange(change: TableRowPropertyChange): string
     previousTrPrInner.length > 0 ? `<w:trPr>${previousTrPrInner}</w:trPr>` : '<w:trPr/>';
 
   return `<w:trPrChange ${attrs}>${normalizedPreviousTrPr}</w:trPrChange>`;
-}
-
-// ============================================================================
-// CONDITIONAL FORMAT STYLE SERIALIZATION
-// ============================================================================
-
-/**
- * Serialize conditional format style (w:cnfStyle)
- */
-function serializeConditionalFormatStyle(style: ConditionalFormatStyle | undefined): string {
-  if (!style) return '';
-
-  // Build the 12-character binary string
-  const bits = [
-    style.firstRow ? '1' : '0',
-    style.lastRow ? '1' : '0',
-    style.firstColumn ? '1' : '0',
-    style.lastColumn ? '1' : '0',
-    style.oddVBand ? '1' : '0',
-    style.evenVBand ? '1' : '0',
-    style.oddHBand ? '1' : '0',
-    style.evenHBand ? '1' : '0',
-    style.nwCell ? '1' : '0',
-    style.neCell ? '1' : '0',
-    style.swCell ? '1' : '0',
-    style.seCell ? '1' : '0',
-  ];
-
-  const val = bits.join('');
-
-  // Only serialize if any bits are set
-  if (val === '000000000000') return '';
-
-  return `<w:cnfStyle w:val="${val}"/>`;
 }
 
 // ============================================================================

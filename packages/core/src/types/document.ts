@@ -124,6 +124,9 @@ export type {
   HeaderReference,
   FooterReference,
   HeaderFooter,
+  TextWatermark,
+  PictureWatermark,
+  Watermark,
   FootnotePosition,
   EndnotePosition,
   NoteNumberRestart,
@@ -141,6 +144,8 @@ export type {
   Section,
   DocumentBody,
 } from './content';
+
+export { pictureWatermarkDisplayEmu } from './content';
 
 // Styles, Theme, Fonts, Relationships & Media
 export type {

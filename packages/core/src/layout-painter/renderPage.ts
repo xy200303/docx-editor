@@ -41,7 +41,8 @@ import { renderTextBoxFragment } from './renderTextBox';
 import type { BlockLookup } from './index';
 import type { BorderSpec } from '../types/document';
 import { borderToStyle } from '../utils/formatToStyle';
-import type { Theme } from '../types/document';
+import type { Theme, Watermark } from '../types/document';
+import { renderWatermarkLayer } from './renderWatermark';
 import {
   measureParagraph,
   rectsToFloatingZones,
@@ -215,6 +216,8 @@ export interface RenderPageOptions {
   footnoteArea?: FootnoteRenderItem[];
   /** Comment IDs that are resolved — skip highlight for these */
   resolvedCommentIds?: Set<number>;
+  /** Watermark to paint behind body content (resolved from the page's section header). */
+  watermark?: Watermark;
 }
 
 /**
@@ -448,6 +451,16 @@ export function renderPage(
   pageEl.dataset.pageNumber = String(page.number);
 
   applyPageStyles(pageEl, page.size.w, page.size.h, options);
+
+  // Watermark layer: painted first so it sits behind the body content area
+  // (which is appended later), matching Word's behind-text watermark.
+  if (options.watermark) {
+    const watermarkLayer = renderWatermarkLayer(options.watermark, page, doc);
+    if (watermarkLayer) {
+      pageEl.appendChild(watermarkLayer);
+    }
+  }
+
   const pageBorderEl = renderPageBorderOverlay(page, options, doc);
   if (pageBorderEl && options.pageBorders?.zOrder === 'back') {
     pageEl.appendChild(pageBorderEl);

@@ -21,6 +21,7 @@ import type { Node as PMNode } from 'prosemirror-model';
 import { schema } from '../schema';
 import type { Document, BlockContent, StyleDefinitions, Theme } from '../../types/document';
 import { createStyleResolver, type StyleResolver } from '../styles';
+import { getDocumentWatermark } from '../../docx/watermarkApi';
 import { paragraphHasPageBreak } from './toProseDoc/paragraph';
 import { convertTable } from './toProseDoc/tables';
 import { convertParagraphWithTextBoxes } from './toProseDoc/textbox';
@@ -118,7 +119,11 @@ export function toProseDoc(document: Document, options?: ToProseDocOptions): PMN
 
   return schema.node(
     'doc',
-    { defaultTabStopTwips: document.package.settings?.defaultTabStop ?? null },
+    {
+      defaultTabStopTwips: document.package.settings?.defaultTabStop ?? null,
+      // Seed the watermark from the parsed headers so it rides PM state.
+      watermark: getDocumentWatermark(document) ?? null,
+    },
     nodes
   );
 }

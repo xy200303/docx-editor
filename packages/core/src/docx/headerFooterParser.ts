@@ -41,6 +41,7 @@ import type { StyleMap } from './styleParser';
 import type { NumberingMap } from './numberingParser';
 import { parseXml, findChildren, getAttribute, type XmlElement } from './xmlParser';
 import { parseBlockContent } from './blockContentParser';
+import { extractWatermark } from './vmlWatermarkParser';
 
 // ============================================================================
 // HEADER/FOOTER MAP INTERFACE
@@ -205,6 +206,14 @@ export function parseHeader(
   result.content = parseBlockContent(rootElement, styles, theme, numbering, rels, media, {
     inHeaderFooter: true,
   });
+
+  // Watermarks live as VML inside the header but are modeled separately so they
+  // stay out of the editable run flow. The w:pict run is ignored by the block
+  // parser above, so this extraction is purely additive.
+  const watermark = extractWatermark(rootElement, rels, media);
+  if (watermark) {
+    result.watermark = watermark;
+  }
 
   return result;
 }

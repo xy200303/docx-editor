@@ -190,6 +190,7 @@ export interface RenderPageOptions {
     showShadow?: boolean;
     theme?: Theme | null;
     titlePg?: boolean;
+    watermark?: Watermark;
 }
 
 // @public

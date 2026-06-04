@@ -141,3 +141,6 @@ export {
 // Table split
 export { getSplitCellDialogConfig, splitActiveTableCell } from './tableSplit';
 export type { SplitCellDialogConfig } from './tableSplit';
+
+// Watermark
+export { setWatermark, getWatermarkFromState } from './watermark';

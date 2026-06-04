@@ -28,7 +28,9 @@ import type {
   BreakContent,
   BlockContent,
   BlockSdt,
+  Watermark,
 } from '../../types/document';
+import { getDocumentWatermark, setDocumentWatermark } from '../../docx/watermarkApi';
 import type { TextBoxAttrs } from '../extensions/nodes/TextBoxExtension';
 import { shouldExportTextBoxInsideFollowingParagraph } from './textBoxAnchors';
 import { sdtAttrsToProps } from './sdtAttrs';
@@ -51,22 +53,26 @@ export function fromProseDoc(pmDoc: PMNode, baseDocument?: Document): Document {
   };
 
   // If we have a base document, preserve its package structure
-  if (baseDocument) {
-    return {
-      ...baseDocument,
-      package: {
-        ...baseDocument.package,
-        document: documentBody,
-      },
-    };
-  }
+  const result: Document = baseDocument
+    ? {
+        ...baseDocument,
+        package: {
+          ...baseDocument.package,
+          document: documentBody,
+        },
+      }
+    : { package: { document: documentBody } };
 
-  // Create a minimal document structure
-  return {
-    package: {
-      document: documentBody,
-    },
-  };
+  // Sync the watermark doc attr → `HeaderFooter.watermark` so the serializer
+  // and any model consumers see watermark applies/removes (incl. via undo).
+  // Reference comparison skips the header-map clone on the common no-change
+  // path — the same Watermark object rides PM attrs until explicitly changed.
+  const attrWatermark = (pmDoc.attrs.watermark as Watermark | null) ?? null;
+  const currentWatermark = getDocumentWatermark(result) ?? null;
+  if (attrWatermark !== currentWatermark) {
+    return setDocumentWatermark(result, attrWatermark);
+  }
+  return result;
 }
 
 /**

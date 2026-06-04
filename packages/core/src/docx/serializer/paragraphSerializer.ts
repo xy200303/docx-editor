@@ -21,11 +21,13 @@ import type {
   Paragraph,
   ParagraphFormatting,
   ParagraphPropertyChange,
+  SectionProperties,
   TextFormatting,
   TrackedChangeInfo,
 } from '../../types/document';
 
 import { serializeTextFormatting } from './runSerializer';
+import { serializeSectionProperties } from './sectionPropertiesSerializer';
 import { escapeXml } from './xmlUtils';
 import {
   serializeFrameProperties,
@@ -109,7 +111,7 @@ export function serializeParagraphFormatting(
   propertyChanges?: ParagraphPropertyChange[],
   pPrIns?: TrackedChangeInfo,
   pPrDel?: TrackedChangeInfo,
-  options?: { baseOnly?: boolean }
+  options?: { baseOnly?: boolean; sectionProperties?: SectionProperties }
 ): string {
   const parts: string[] = [];
 
@@ -119,21 +121,31 @@ export function serializeParagraphFormatting(
       parts.push(`<w:pStyle w:val="${escapeXml(formatting.styleId)}"/>`);
     }
 
-    // Keep next/lines/widow
-    if (formatting.keepNext) {
+    // Keep next/lines/widow. Like widowControl below, these emit an explicit
+    // `w:val="0"` for `false` so a paragraph that cancels a style-inherited
+    // flag round-trips instead of silently re-inheriting it.
+    if (formatting.keepNext === true) {
       parts.push('<w:keepNext/>');
+    } else if (formatting.keepNext === false) {
+      parts.push('<w:keepNext w:val="0"/>');
     }
 
-    if (formatting.keepLines) {
+    if (formatting.keepLines === true) {
       parts.push('<w:keepLines/>');
+    } else if (formatting.keepLines === false) {
+      parts.push('<w:keepLines w:val="0"/>');
     }
 
-    if (formatting.contextualSpacing) {
+    if (formatting.contextualSpacing === true) {
       parts.push('<w:contextualSpacing/>');
+    } else if (formatting.contextualSpacing === false) {
+      parts.push('<w:contextualSpacing w:val="0"/>');
     }
 
-    if (formatting.pageBreakBefore) {
+    if (formatting.pageBreakBefore === true) {
       parts.push('<w:pageBreakBefore/>');
+    } else if (formatting.pageBreakBefore === false) {
+      parts.push('<w:pageBreakBefore w:val="0"/>');
     }
 
     // Frame properties
@@ -174,13 +186,17 @@ export function serializeParagraphFormatting(
     }
 
     // Suppress line numbers
-    if (formatting.suppressLineNumbers) {
+    if (formatting.suppressLineNumbers === true) {
       parts.push('<w:suppressLineNumbers/>');
+    } else if (formatting.suppressLineNumbers === false) {
+      parts.push('<w:suppressLineNumbers w:val="0"/>');
     }
 
     // Suppress auto hyphens
-    if (formatting.suppressAutoHyphens) {
+    if (formatting.suppressAutoHyphens === true) {
       parts.push('<w:suppressAutoHyphens/>');
+    } else if (formatting.suppressAutoHyphens === false) {
+      parts.push('<w:suppressAutoHyphens w:val="0"/>');
     }
 
     // Spacing
@@ -196,8 +212,10 @@ export function serializeParagraphFormatting(
     }
 
     // Text direction (bidi)
-    if (formatting.bidi) {
+    if (formatting.bidi === true) {
       parts.push('<w:bidi/>');
+    } else if (formatting.bidi === false) {
+      parts.push('<w:bidi w:val="0"/>');
     }
 
     // Justification
@@ -218,6 +236,16 @@ export function serializeParagraphFormatting(
     const rPrXml = buildParagraphMarkRPr(formatting, pPrIns ?? undefined, pPrDel ?? undefined);
     if (rPrXml) {
       parts.push(rPrXml);
+    }
+
+    // Section properties (mid-body section break carried on `w:pPr/w:sectPr`).
+    // CT_PPr ordering puts `<w:sectPr>` after the paragraph-mark `<w:rPr>` and
+    // before `<w:pPrChange>`.
+    if (options?.sectionProperties) {
+      const sectPrXml = serializeSectionProperties(options.sectionProperties);
+      if (sectPrXml) {
+        parts.push(sectPrXml);
+      }
     }
 
     // OOXML allows at most one `<w:pPrChange>` per `<w:pPr>` (CT_PPr
@@ -290,7 +318,8 @@ export function serializeParagraph(paragraph: Paragraph): string {
     paragraph.formatting,
     paragraph.propertyChanges,
     paragraph.pPrIns,
-    paragraph.pPrDel
+    paragraph.pPrDel,
+    paragraph.sectionProperties ? { sectionProperties: paragraph.sectionProperties } : undefined
   );
   if (pPrXml) {
     parts.push(pPrXml);
