@@ -134,6 +134,7 @@ export function h(container: HTMLElement, focusedIds: Set<string>): void;
 // @public
 export interface HeaderFooterContent {
     blocks: FlowBlock[];
+    flowHeight?: number;
     height: number;
     measures: Measure[];
     visualBottom?: number;

@@ -206,6 +206,48 @@ export function resolveHeaderFooterVisualTop(
   return paragraphY;
 }
 
+/**
+ * Whether a header/footer block participates in the in-flow band height that
+ * pushes the body margin.
+ *
+ * OOXML semantics: Word grows the header/footer band — and shifts body text —
+ * based only on the story's in-flow content. A floating/anchored object
+ * (`wp:anchor` DrawingML or an absolutely-positioned VML shape, e.g. a
+ * full-page letterhead anchored to the page in a header) is removed from the
+ * text flow and positioned on the page; it does NOT grow the band or push the
+ * body. So only inline-flow blocks count here. Anchored image *runs* inside a
+ * paragraph are likewise out of flow, but they don't contribute to the
+ * paragraph's measured line height, so paragraphs need no special handling.
+ *
+ * @public
+ */
+export function contributesToHeaderFooterFlowHeight(block: FlowBlock): boolean {
+  switch (block.kind) {
+    case 'paragraph':
+    case 'table':
+      return true;
+    case 'image':
+      // Inline images count; page/paragraph-anchored floats do not.
+      return !block.anchor?.isAnchored;
+    case 'textBox':
+      // Only genuinely inline text boxes count. 'float' (square/tight/through/
+      // behind/inFront) and 'block' (topAndBottom) are positioned out of the
+      // body's flow and must not push the body margin.
+      return block.displayMode === undefined || block.displayMode === 'inline';
+    default:
+      return false; // sectionBreak / pageBreak / columnBreak
+  }
+}
+
+function measureFlowHeight(measure: Measure | undefined): number {
+  if (!measure) return 0;
+  if (measure.kind === 'paragraph') return measure.totalHeight;
+  if (measure.kind === 'table') return measure.totalHeight;
+  if (measure.kind === 'image') return measure.height;
+  if (measure.kind === 'textBox') return measure.height;
+  return 0;
+}
+
 export function calculateHeaderFooterVisualBounds(
   blocks: FlowBlock[],
   measures: Measure[],
@@ -325,13 +367,13 @@ export function convertHeaderFooterPmDocToContent(
 
   const blocksForMeasure = normalizeHeaderFooterMeasureBlocks(blocks);
   const measures = options.measureBlocks(blocksForMeasure, contentWidth);
-  const totalHeight = measures.reduce((h, m) => {
-    if (m.kind === 'paragraph') return h + m.totalHeight;
-    if (m.kind === 'table') return h + m.totalHeight;
-    if (m.kind === 'image') return h + m.height;
-    if (m.kind === 'textBox') return h + m.height;
-    return h;
-  }, 0);
+  let totalHeight = 0;
+  let flowHeight = 0;
+  for (let i = 0; i < blocksForMeasure.length; i++) {
+    const h = measureFlowHeight(measures[i]);
+    totalHeight += h;
+    if (contributesToHeaderFooterFlowHeight(blocksForMeasure[i])) flowHeight += h;
+  }
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
     blocks,
     measures,
@@ -343,6 +385,7 @@ export function convertHeaderFooterPmDocToContent(
     blocks: blocksForMeasure,
     measures,
     height: totalHeight,
+    flowHeight,
     visualTop,
     visualBottom,
   };

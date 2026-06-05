@@ -60,6 +60,7 @@ export const FRAGMENT_CLASS_NAMES: {
 // @public
 export interface HeaderFooterContent {
     blocks: FlowBlock[];
+    flowHeight?: number;
     height: number;
     measures: Measure[];
     visualBottom?: number;

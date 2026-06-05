@@ -108,6 +108,7 @@ export {
   normalizeHeaderFooterMeasureBlocks,
   resolveHeaderFooterVisualTop,
   calculateHeaderFooterVisualBounds,
+  contributesToHeaderFooterFlowHeight,
   convertHeaderFooterToContent,
   convertHeaderFooterPmDocToContent,
   computeHfCaretRectFromView,
@@ -115,6 +116,14 @@ export {
   invalidateHfDomCache,
 } from './headerFooterLayout';
 export type { HeaderFooterMetrics, ConvertHeaderFooterOptions } from './headerFooterLayout';
+
+// Body-margin extension for header/footer band growth. Shared so React + Vue
+// pipelines stay in lockstep (issue #705 / #696).
+export { extendMarginsForHeaderFooter } from './headerFooterMargins';
+export type {
+  ExtendMarginsForHeaderFooterInput,
+  ExtendMarginsForHeaderFooterResult,
+} from './headerFooterMargins';
 
 // Table-insert hover hit-test — pure DOM logic shared across adapters.
 export {

@@ -86,7 +86,12 @@ export function createPaginator(options: PaginatorOptions) {
   }
 
   if (getContentHeight() <= 0) {
-    throw new Error('Paginator: page size and margins yield no content area');
+    throw new Error(
+      'Paginator: page size and margins yield no content area ' +
+        `(pageSize=${Math.round(pageSize.w)}x${Math.round(pageSize.h)} ` +
+        `margins top=${Math.round(margins.top)} bottom=${Math.round(margins.bottom)} ` +
+        `left=${Math.round(margins.left)} right=${Math.round(margins.right)})`
+    );
   }
 
   // Calculate column width

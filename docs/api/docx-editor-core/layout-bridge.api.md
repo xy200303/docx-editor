@@ -114,6 +114,9 @@ export function computeHfSelectionRectsFromView(view: EditorView, section: 'head
 }>;
 
 // @public
+export function contributesToHeaderFooterFlowHeight(block: FlowBlock): boolean;
+
+// @public
 export function convertBorderSpecToLayout(border: {
     style?: string;
     size?: number;
@@ -193,6 +196,32 @@ export interface DomSelectionRect {
     x: number;
     // (undocumented)
     y: number;
+}
+
+// @public
+export function extendMarginsForHeaderFooter(input: ExtendMarginsForHeaderFooterInput): ExtendMarginsForHeaderFooterResult;
+
+// @public (undocumented)
+export interface ExtendMarginsForHeaderFooterInput {
+    bodyBlocks?: FlowBlock[];
+    finalMargins: PageMargins;
+    footers?: Array<HeaderFooterContent | undefined>;
+    headers?: Array<HeaderFooterContent | undefined>;
+    margins: PageMargins;
+    // (undocumented)
+    pageSize: {
+        w: number;
+        h: number;
+    };
+    warn?: (message: string) => void;
+}
+
+// @public (undocumented)
+export interface ExtendMarginsForHeaderFooterResult {
+    // (undocumented)
+    finalMargins: PageMargins;
+    // (undocumented)
+    margins: PageMargins;
 }
 
 // @public

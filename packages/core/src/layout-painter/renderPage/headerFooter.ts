@@ -35,8 +35,18 @@ export interface HeaderFooterContent {
   blocks: FlowBlock[];
   /** Measurements for the blocks. */
   measures: Measure[];
-  /** Total height of the content. */
+  /** Total height of the content (in-flow stack incl. floating blocks). */
   height: number;
+  /**
+   * In-flow band height: the height of strictly in-flow content
+   * (paragraphs, tables, inline images/text boxes), EXCLUDING anchored /
+   * floating objects. This is what grows the header/footer band and pushes
+   * the body margin, mirroring Word: a page/margin-anchored shape (e.g. a
+   * full-page letterhead in a header) is positioned independently and does
+   * NOT push body text down. Use this — not `height`/`visualBottom` — for
+   * margin extension. Falls back to `height` when undefined.
+   */
+  flowHeight?: number;
   /** Top-most visual extent relative to the nominal flow origin. */
   visualTop?: number;
   /** Bottom-most visual extent relative to the nominal flow origin. */
