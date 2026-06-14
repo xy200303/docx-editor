@@ -30,6 +30,33 @@ const errorCallbacks = new Set<(error: Error) => void>();
 // Track overall loading state
 let isLoadingAny = false;
 
+// When false, the automatic Google Fonts fetch path is disabled. Embedders
+// that must not egress (e.g. a CSP-locked review surface rendering privileged
+// content from embedded font blobs, or any offline host) call
+// setGoogleFontsEnabled(false) to suppress the redundant remote fetches at the
+// source. Embedded faces (loadFontFromBuffer) and consumer-hosted faces
+// (loadFontFromUrl / the `fonts` prop) are unaffected — only the implicit
+// Google Fonts lookup in loadFont / loadFontWithMapping is gated.
+let googleFontsEnabled = true;
+
+// Families registered through this module's face loaders — raw buffers
+// (DOCX-embedded fonts) and consumer URLs (the `fonts` prop). Both are
+// routinely subsetted, so "this family renders" does NOT imply full glyph
+// coverage. loadFontWithMapping keeps fetching the metric-compatible Google
+// equivalent for these families as a glyph-coverage safety net; genuine
+// system fonts skip it. Marked synchronously at registration start so an
+// in-flight registration already counts as provenance.
+const registeredFamilies = new Set<string>();
+
+// Families the canvas probe confirmed as system-satisfied. Kept SEPARATE from
+// loadedFonts on purpose: loadedFonts means "a fetch/registration happened"
+// and short-circuits loadFont before its options are even looked at, so
+// putting probe results there would make a later explicit-weights call a
+// silent no-op. Negative probes are NOT cached — a host page's own
+// @font-face can make a font appear at any time, and the re-probe is two
+// measureText calls on a shared canvas.
+const probeSatisfied = new Set<string>();
+
 function reportFontError(error: unknown, context: string): void {
   // Wrap in a fresh Error rather than mutating the original — some Error
   // subclasses (DOMException, frozen objects) have a non-writable .message
@@ -59,6 +86,50 @@ function reportFontError(error: unknown, context: string): void {
 
 function faceKey(family: string, weight: number | string = 'normal'): string {
   return `${family.trim()}|${weight}`;
+}
+
+// "A genuine system font satisfies this family" — the decision behind every
+// fetch skip. Self-excludes families registered through our face loaders
+// (subsetted/partial faces — see registeredFamilies); system fonts that
+// render are assumed weight-complete, since OS-bundled families ship full
+// sets. The first positive probe also fires onFontsLoaded (microtask,
+// matching the fetch path's async timing) — consumers gate ready-state UI
+// on that callback, and before the skip existed the fetch guaranteed it.
+function satisfiedBySystemFont(family: string): boolean {
+  if (registeredFamilies.has(family)) {
+    return false;
+  }
+  if (probeSatisfied.has(family)) {
+    return true;
+  }
+  if (canRenderFont(family)) {
+    probeSatisfied.add(family);
+    queueMicrotask(() => notifyCallbacks([family]));
+    return true;
+  }
+  return false;
+}
+
+// In-flight buffer/URL registrations for a family (loadingFaces is keyed
+// `family|weight`).
+function inFlightFacePromises(family: string): Promise<boolean>[] {
+  const prefix = `${family}|`;
+  const pending: Promise<boolean>[] = [];
+  for (const [key, promise] of loadingFaces) {
+    if (key.startsWith(prefix)) {
+      pending.push(promise);
+    }
+  }
+  return pending;
+}
+
+// Shared success bookkeeping for the buffer/URL face loaders. One place, so
+// the two loaders cannot drift (the next probeSatisfied-style cache line
+// added to one but not the other would skew buffer vs URL faces silently).
+function markFaceLoaded(key: string, family: string): void {
+  loadedFaces.add(key);
+  loadedFonts.add(family);
+  notifyCallbacks([family]);
 }
 
 /**
@@ -128,11 +199,58 @@ export async function loadFont(
     return existingLoad;
   }
 
+  // Already satisfied by a system font — fetching the Google copy would be a
+  // redundant round-trip (and a CSP violation in no-egress embedders). Only
+  // taken for the default face set: explicit options.weights/options.styles
+  // always fetch, because the local probe can only see that *a* face renders,
+  // never that a specific weight exists (CSS font matching falls back to the
+  // nearest weight instead of failing). Deliberately NOT recorded in
+  // loadedFonts — the "Already loaded?" check above ignores options, so
+  // recording it there would turn a later explicit-weights call into a silent
+  // no-op. Synchronous on purpose: an await here would let concurrent
+  // loadFont calls slip past the loadingFonts dedupe above.
+  if (!options && satisfiedBySystemFont(normalizedFamily)) {
+    return true;
+  }
+
+  // A buffer/URL registration for this family may be mid-flight (its
+  // waitForFontAvailable can take up to 3s). Snapshot here, in the same
+  // synchronous frame as the dedupe checks above.
+  const pendingFaces = inFlightFacePromises(normalizedFamily);
+
+  // Remote disabled, not locally satisfied, and no in-flight registration
+  // that could change the answer — statically false. Skip the promise
+  // machinery instead of re-paying it on every loadDocumentFonts pass.
+  if (!googleFontsEnabled && pendingFaces.length === 0) {
+    return false;
+  }
+
   // Create load promise
   const loadPromise = (async (): Promise<boolean> => {
     isLoadingAny = true;
 
     try {
+      // Settle in-flight registrations and re-check, so we neither issue the
+      // redundant fetch this path exists to skip nor report a spurious
+      // failure under googleFontsEnabled=false. Skipped when nothing was in
+      // flight — the synchronous checks above already gave the answer.
+      if (pendingFaces.length > 0) {
+        await Promise.all(pendingFaces);
+        if (loadedFonts.has(normalizedFamily)) {
+          return true;
+        }
+        if (!options && satisfiedBySystemFont(normalizedFamily)) {
+          return true;
+        }
+      }
+
+      // Remote fetch disabled (no-egress embedder). The font is not locally
+      // available, so don't inject a Google Fonts <link> — report failure and
+      // let the caller's CSS fallback stack render with what is available.
+      if (!googleFontsEnabled) {
+        return false;
+      }
+
       // Generate Google Fonts URL
       const url = getGoogleFontsUrl(normalizedFamily, options?.weights, options?.styles);
 
@@ -141,16 +259,22 @@ export async function loadFont(
       link.rel = 'stylesheet';
       link.href = url;
 
-      // Wait for load or error
+      // Wait for load or error, with a 5s timeout. Clear the timer once
+      // settled so no handle dangles past the load (keeps test runners and
+      // watch cycles from waiting on dead timers).
       const loaded = await new Promise<boolean>((resolve) => {
-        link.onload = () => resolve(true);
-        link.onerror = () => resolve(false);
+        const timer = setTimeout(() => resolve(false), 5000);
+        link.onload = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        link.onerror = () => {
+          clearTimeout(timer);
+          resolve(false);
+        };
 
         // Append to head
         document.head.appendChild(link);
-
-        // Timeout after 5 seconds
-        setTimeout(() => resolve(false), 5000);
       });
 
       if (loaded) {
@@ -215,7 +339,49 @@ export async function loadFonts(
  * @returns true if the font is loaded, false otherwise
  */
 export function isFontLoaded(fontFamily: string): boolean {
-  return loadedFonts.has(fontFamily.trim());
+  // Probe-satisfied system fonts count as available: onFontsLoaded announces
+  // them, so the read API must agree. (loadFont's internal dedupe reads
+  // loadedFonts directly — the split only matters there, where a
+  // probe-satisfied family must still honor explicit weight requests.)
+  const family = fontFamily.trim();
+  return loadedFonts.has(family) || probeSatisfied.has(family);
+}
+
+/**
+ * Enable or disable the editor's automatic Google Fonts lookup.
+ *
+ * Defaults to enabled. Set to `false` in no-egress embedders (strict CSP,
+ * offline) so `loadFont` / `loadFontWithMapping` never inject a
+ * `fonts.googleapis.com` stylesheet `<link>`. This gates ONLY the implicit
+ * Google Fonts lookup — font URLs you register yourself (the `fonts` prop /
+ * `loadFontFromUrl`) are still fetched by the browser, and embedded blobs
+ * (`loadFontFromBuffer`) and system fonts still resolve.
+ *
+ * The flag is page-global (module-level), not per-editor: with multiple
+ * editors on one page the last caller wins. Call it before loading documents;
+ * disabling does not cancel fetches already in flight. A document font that
+ * is neither local nor registered then resolves `loadFont` to `false`
+ * silently (no `onFontError`) and renders via its CSS fallback stack.
+ *
+ * @see isGoogleFontsEnabled
+ * @see loadFontFromBuffer
+ * @see loadFontFromUrl
+ *
+ * @public
+ */
+export function setGoogleFontsEnabled(enabled: boolean): void {
+  googleFontsEnabled = enabled;
+}
+
+/**
+ * Whether the automatic Google Fonts lookup is currently enabled.
+ *
+ * @see setGoogleFontsEnabled
+ *
+ * @public
+ */
+export function isGoogleFontsEnabled(): boolean {
+  return googleFontsEnabled;
 }
 
 /**
@@ -233,7 +399,7 @@ export function isLoading(): boolean {
  * @returns Array of loaded font family names
  */
 export function getLoadedFonts(): string[] {
-  return Array.from(loadedFonts);
+  return Array.from(new Set([...loadedFonts, ...probeSatisfied]));
 }
 
 /**
@@ -307,11 +473,32 @@ async function waitForFontAvailable(fontFamily: string, timeout: number): Promis
   return true;
 }
 
+// Probe scratchpad. The probe runs once per family per document load, so a
+// fresh canvas per call is pure waste — one shared context suffices, and the
+// fallback-font widths ('72px sans-serif' over a fixed string) are session
+// constants worth memoizing. Reset by __resetFontLoaderState (tests swap the
+// global document, which would otherwise leave a stale context behind).
+let probeContext: CanvasRenderingContext2D | null | undefined;
+const fallbackWidthCache = new Map<string, number>();
+const PROBE_TEXT = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+function getProbeContext(): CanvasRenderingContext2D | null {
+  if (probeContext === undefined) {
+    probeContext = document.createElement('canvas').getContext('2d');
+    if (probeContext) {
+      probeContext.textBaseline = 'top';
+    }
+  }
+  return probeContext;
+}
+
 /**
  * Check if a font is available on the system using canvas measurement
  *
- * This uses the technique of comparing text width with the target font
- * vs a known fallback font. If they differ, the font is available.
+ * Compares text width with the target font vs a known fallback font (and the
+ * opposite fallback, for names that collide with the browser defaults). If
+ * the widths differ, the font is available. Reuses one shared canvas; the
+ * fallback widths are session constants and memoized.
  *
  * @param fontFamily - The font family name to check
  * @param fallbackFont - Fallback font to compare against
@@ -323,43 +510,42 @@ export function canRenderFont(fontFamily: string, fallbackFont: string = 'sans-s
     return false;
   }
 
-  const _canRenderFont = (fontName: string, fallback: string): boolean => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-      return false;
-    }
-
-    ctx.textBaseline = 'top';
-
-    const text = 'abcdefghijklmnopqrstuvwxyz0123456789';
-
-    // Measure with fallback font only
-    ctx.font = `72px ${fallback}`;
-    const fallbackWidth = ctx.measureText(text).width;
-
-    // Measure with target font (with fallback)
-    ctx.font = `72px "${fontName}", ${fallback}`;
-    const customWidth = ctx.measureText(text).width;
-
-    // If widths differ, the custom font was used
-    return customWidth !== fallbackWidth;
-  };
-
-  // Check with primary fallback
-  if (_canRenderFont(fontFamily, fallbackFont)) {
-    return true;
+  const ctx = getProbeContext();
+  if (!ctx) {
+    return false;
   }
 
-  // Check with opposite fallback (handles edge case where font name
-  // matches the browser's default sans-serif or serif)
-  const oppositeFallback = fallbackFont === 'sans-serif' ? 'serif' : 'sans-serif';
-  return _canRenderFont(fontFamily, oppositeFallback);
+  const measure = (font: string): number => {
+    ctx.font = font;
+    return ctx.measureText(PROBE_TEXT).width;
+  };
+
+  // If widths differ, the custom font (not the fallback) was used.
+  const differsFrom = (fallback: string): boolean => {
+    let fallbackWidth = fallbackWidthCache.get(fallback);
+    if (fallbackWidth === undefined) {
+      fallbackWidth = measure(`72px ${fallback}`);
+      fallbackWidthCache.set(fallback, fallbackWidth);
+    }
+    return measure(`72px "${fontFamily}", ${fallback}`) !== fallbackWidth;
+  };
+
+  // Check with the primary fallback, then the opposite one (handles the edge
+  // case where the font name matches the browser's default sans-serif/serif).
+  return (
+    differsFrom(fallbackFont) || differsFrom(fallbackFont === 'sans-serif' ? 'serif' : 'sans-serif')
+  );
 }
 
 /**
  * Load a font from a raw buffer (e.g., embedded in DOCX)
+ *
+ * Call before loading the document when possible: registration marks the
+ * family as ours, which is what keeps the metric-compatible Google fallback
+ * in play for subsetted faces during the document's font resolution pass.
+ * Late registration still self-heals on the next pass. Under
+ * `setGoogleFontsEnabled(false)` that fallback fetch is suppressed and
+ * glyphs missing from the registered faces render via the CSS stack.
  *
  * @param fontFamily - The font family name
  * @param buffer - Font file buffer (TTF, OTF, WOFF, WOFF2)
@@ -377,6 +563,12 @@ export async function loadFontFromBuffer(
 
   const normalizedFamily = fontFamily.trim();
   const key = faceKey(normalizedFamily, options?.weight);
+
+  // Provenance: mark before the async work so an in-flight registration
+  // already counts as registered (see loadFontWithMapping). Marking a family
+  // that then fails to load only means we keep fetching its Google
+  // equivalent — the safe direction.
+  registeredFamilies.add(normalizedFamily);
 
   // Face-keyed dedupe so multiple weights of the same family register
   // independently and a prior URL/Google load of the family does not skip
@@ -404,9 +596,7 @@ export async function loadFontFromBuffer(
 
       await waitForFontAvailable(normalizedFamily, 3000);
 
-      loadedFaces.add(key);
-      loadedFonts.add(normalizedFamily);
-      notifyCallbacks([normalizedFamily]);
+      markFaceLoaded(key, normalizedFamily);
 
       return true;
     } catch (error) {
@@ -436,7 +626,10 @@ function guessFontFormat(src: string): string {
  * Load a font face from a URL (woff2, woff, ttf, otf).
  *
  * Injects an `@font-face` rule pointing at the URL. Multiple weights of the
- * same family can be registered independently.
+ * same family can be registered independently. Families registered here are
+ * treated as potentially subsetted: the editor still fetches their
+ * metric-compatible Google equivalent as a glyph-coverage fallback, unless
+ * disabled via `setGoogleFontsEnabled(false)`.
  *
  * @param fontFamily - CSS font-family name to expose
  * @param src - URL to the font file
@@ -469,6 +662,9 @@ export async function loadFontFromUrl(
   const normalizedFamily = fontFamily.trim();
   const key = faceKey(normalizedFamily, options?.weight);
 
+  // Provenance: subsetted-face safety net — see registeredFamilies.
+  registeredFamilies.add(normalizedFamily);
+
   if (loadedFaces.has(key)) return true;
   const existing = loadingFaces.get(key);
   if (existing) return existing;
@@ -489,9 +685,7 @@ export async function loadFontFromUrl(
 
       await waitForFontAvailable(normalizedFamily, 3000);
 
-      loadedFaces.add(key);
-      loadedFonts.add(normalizedFamily);
-      notifyCallbacks([normalizedFamily]);
+      markFaceLoaded(key, normalizedFamily);
 
       return true;
     } catch (error) {
@@ -616,6 +810,18 @@ export async function loadFontWithMapping(fontFamily: string): Promise<boolean> 
   // use whichever is available without @font-face aliasing that would
   // hijack Canvas measurements.
   if (googleFont !== trimmed) {
+    // A genuine system-installed original has full glyph coverage, so the
+    // metric-approximate Google equivalent would never be consulted by the
+    // fallback stack — skip its fetch. Registered (subsetted) families keep
+    // it as the glyph-coverage safety net — see registeredFamilies. The
+    // isFontLoaded leg covers "equivalent already fetched on an earlier
+    // pass"; satisfiedBySystemFont self-excludes registered families.
+    if (
+      (!registeredFamilies.has(trimmed) && isFontLoaded(trimmed)) ||
+      satisfiedBySystemFont(trimmed)
+    ) {
+      return true;
+    }
     const result = await loadFont(googleFont);
     if (result) {
       loadedFonts.add(trimmed);
@@ -625,6 +831,30 @@ export async function loadFontWithMapping(fontFamily: string): Promise<boolean> 
 
   // No mapping needed, load directly
   return loadFont(googleFont);
+}
+
+/**
+ * Test-only: reset every piece of module-level loader state. fontLoader is a
+ * module singleton, and `bun test` runs all files in one process — without a
+ * reset, family names cached by one test file leak into every later one.
+ *
+ * Not re-exported from the package entry; import from this module directly.
+ *
+ * @internal
+ */
+export function __resetFontLoaderState(): void {
+  loadedFonts.clear();
+  loadingFonts.clear();
+  loadedFaces.clear();
+  loadingFaces.clear();
+  loadCallbacks.clear();
+  errorCallbacks.clear();
+  registeredFamilies.clear();
+  probeSatisfied.clear();
+  fallbackWidthCache.clear();
+  probeContext = undefined;
+  googleFontsEnabled = true;
+  isLoadingAny = false;
 }
 
 /**

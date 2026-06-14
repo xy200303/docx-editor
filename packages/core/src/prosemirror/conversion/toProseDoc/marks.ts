@@ -10,8 +10,29 @@
 
 import { schema } from '../../schema';
 import type { TextFormatting } from '../../../types/document';
+import type { ShadingProperties } from '../../../types/colors';
+import { ensureHexPrefix } from '../../../utils/colorResolver';
 import { mergeTextFormatting } from '../../../utils/textFormattingMerge';
 import type { StyleResolver } from '../../styles';
+
+/**
+ * Map a run-level shading (`w:shd`) to a highlight color string, when it
+ * encodes a solid background fill. The editor emits `w:shd w:val="clear"` as
+ * the carrier for custom highlight colors that fall outside the OOXML
+ * named-highlight palette (§17.18.40), so a concrete `fill` rgb reads back as
+ * the highlight mark. Only a `clear` / no-pattern fill maps, where Word paints
+ * the background as `w:fill`. Other patterns are skipped: `solid` paints the
+ * pattern color (`w:color`) over the fill, and `pct*`/stripes blend the two —
+ * neither is a flat color the highlight can reproduce. Theme-only / `auto`
+ * fills carry no concrete rgb and are likewise left untouched. (#712)
+ */
+function runShadingToHighlight(shading: ShadingProperties | undefined): string | undefined {
+  if (!shading) return undefined;
+  if (shading.pattern && shading.pattern !== 'clear') return undefined;
+  const rgb = shading.fill?.rgb;
+  if (!rgb || shading.fill?.auto) return undefined;
+  return ensureHexPrefix(rgb);
+}
 
 /**
  * Convert TextFormatting to ProseMirror marks
@@ -64,11 +85,19 @@ export function textFormattingToMarks(
     );
   }
 
-  // Highlight
-  if (formatting.highlight && formatting.highlight !== 'none') {
+  // Highlight (w:highlight) — or run-level shading fill (w:shd) used as a
+  // background. The editor serializes custom (non-OOXML-named) highlight colors
+  // as `<w:shd w:fill="...">` because w:highlight only permits a fixed palette
+  // (§17.18.40). On import that shading must round-trip back to the highlight
+  // mark, otherwise the background silently disappears. (#712)
+  const highlightColor =
+    formatting.highlight && formatting.highlight !== 'none'
+      ? formatting.highlight
+      : runShadingToHighlight(formatting.shading);
+  if (highlightColor) {
     marks.push(
       schema.mark('highlight', {
-        color: formatting.highlight,
+        color: highlightColor,
       })
     );
   }

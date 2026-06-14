@@ -12,6 +12,7 @@
         :show-toolbar="true"
         :document-name="fileName"
         :fonts="customFonts"
+        :i18n="editorLocale"
         @change="handleDocumentChange"
         @error="handleError"
         @ready="handleReady"
@@ -67,6 +68,7 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue';
 import { DocxEditor, type DocxEditorRef } from '@eigenpal/docx-editor-vue';
+import { de as deLocale } from '@eigenpal/docx-editor-i18n';
 import ExampleSwitcher from '../../shared/ExampleSwitcher.vue';
 import { createEmptyDocument, findStartPosForParaId } from '@eigenpal/docx-editor-core';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
@@ -126,6 +128,14 @@ const customFonts = computed(() => {
     { family: 'E2E Custom Font', src: '/e2e-fixtures/inter-regular.woff2' },
     { family: 'E2E Custom Font', src: '/e2e-fixtures/inter-bold.woff2', weight: 700 },
   ];
+});
+
+// E2E hook: `?locale=de` mounts the editor with the German i18n pack so
+// the Playwright suite can assert localized tooltips / context-menu text.
+const editorLocale = computed(() => {
+  if (typeof window === 'undefined') return undefined;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('locale') === 'de' ? deLocale : undefined;
 });
 
 // Agent panel — opt-in via `?agentPanel=1` like the React demo. Keeps the
@@ -221,6 +231,9 @@ onMounted(async () => {
     import.meta.env.VITE_DOCX_EDITOR_E2E === '1';
   if (isE2E) {
     window.__DOCX_EDITOR_E2E__ = {
+      // Raw body EditorView — lets specs build precise PM states (e.g. a line
+      // with mixed font sizes) without driving the toolbar UI.
+      getView: () => (editorRef.value?.getEditorRef() as any)?.getView?.() ?? null,
       getPmStartForParaId: (paraId: string) => {
         const state = (editorRef.value?.getEditorRef() as any)?.getState?.();
         if (!state || !paraId) return null;
@@ -267,6 +280,17 @@ onMounted(async () => {
         if (!view) return;
         view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.near(view.state.doc.resolve(pmPos))));
       },
+      getDocSize: () => {
+        const state = (editorRef.value?.getEditorRef() as any)?.getState?.();
+        return state?.doc.content.size ?? null;
+      },
+      highlightRange: (from: number, to: number) => {
+        editorRef.value?.highlightRange(from, to);
+      },
+      scrollToCommentId: (commentId: number) =>
+        editorRef.value?.scrollToCommentId(commentId) ?? false,
+      scrollToChangeId: (revisionId: number) =>
+        editorRef.value?.scrollToChangeId(revisionId) ?? false,
       scrollToPage: (pageNumber: number) => {
         document
           .querySelector<HTMLElement>(`.paged-editor__page[data-page-number="${pageNumber}"]`)
@@ -274,6 +298,17 @@ onMounted(async () => {
       },
       getTotalPages: () => editorRef.value?.getTotalPages() ?? 0,
       getCurrentPage: () => editorRef.value?.getCurrentPage() ?? 0,
+      // Collect every paragraph paraId from the host-facing Document model
+      // (getDocument()), regardless of nesting — used to assert getDocument()
+      // stays in sync with PM paraIds (#746).
+      getDocumentParaIds: () => {
+        const ids: (string | null)[] = [];
+        JSON.stringify(editorRef.value?.getDocument() ?? null, (k, v) => {
+          if (k === 'paraId') ids.push(v as string | null);
+          return v;
+        });
+        return ids;
+      },
       saveByteLength: async () => {
         const buffer = await editorRef.value?.save();
         return buffer?.byteLength ?? null;

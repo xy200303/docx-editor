@@ -176,6 +176,9 @@ export function App() {
     // this leaks an internal API into the public demo at docx-editor.dev.
     if (!isE2E) return;
     window.__DOCX_EDITOR_E2E__ = {
+      // Raw body EditorView — lets specs build precise PM states (e.g. a line
+      // with mixed font sizes) without driving the toolbar UI.
+      getView: () => editorRef.current?.getEditorRef()?.getView?.() ?? null,
       getPmStartForParaId: (paraId: string) => {
         const state = editorRef.current?.getEditorRef()?.getState?.();
         if (!state || !paraId) return null;
@@ -222,6 +225,17 @@ export function App() {
       scrollToPosition: (pmPos: number) => {
         editorRef.current?.scrollToPosition(pmPos);
       },
+      getDocSize: () => {
+        const state = editorRef.current?.getEditorRef()?.getState?.();
+        return state?.doc.content.size ?? null;
+      },
+      highlightRange: (from: number, to: number) => {
+        editorRef.current?.highlightRange(from, to);
+      },
+      scrollToCommentId: (commentId: number) =>
+        editorRef.current?.scrollToCommentId(commentId) ?? false,
+      scrollToChangeId: (revisionId: number) =>
+        editorRef.current?.scrollToChangeId(revisionId) ?? false,
       scrollToPage: (pageNumber: number) => {
         editorRef.current?.scrollToPage(pageNumber);
       },

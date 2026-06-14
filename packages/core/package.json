@@ -1,6 +1,6 @@
 {
   "name": "@eigenpal/docx-editor-core",
-  "version": "1.2.1",
+  "version": "1.5.0",
   "sideEffects": false,
   "description": "Framework-agnostic core for DOCX parsing, editing, and rendering",
   "main": "./dist/core.js",
@@ -223,6 +223,11 @@
       "import": "./dist/utils/units.mjs",
       "require": "./dist/utils/units.js"
     },
+    "./utils/autoScroll": {
+      "types": "./dist/utils/autoScroll.d.ts",
+      "import": "./dist/utils/autoScroll.mjs",
+      "require": "./dist/utils/autoScroll.js"
+    },
     "./docx/parser": {
       "types": "./dist/docx/parser.d.ts",
       "import": "./dist/docx/parser.mjs",
@@ -292,6 +297,51 @@
       "types": "./dist/prosemirror/commands/paragraph.d.ts",
       "import": "./dist/prosemirror/commands/paragraph.mjs",
       "require": "./dist/prosemirror/commands/paragraph.js"
+    },
+    "./prosemirror/paraText": {
+      "types": "./dist/prosemirror/paraText.d.ts",
+      "import": "./dist/prosemirror/paraText.mjs",
+      "require": "./dist/prosemirror/paraText.js"
+    },
+    "./prosemirror/queries": {
+      "types": "./dist/prosemirror/queries.d.ts",
+      "import": "./dist/prosemirror/queries.mjs",
+      "require": "./dist/prosemirror/queries.js"
+    },
+    "./prosemirror/applyFormatting": {
+      "types": "./dist/prosemirror/applyFormatting.d.ts",
+      "import": "./dist/prosemirror/applyFormatting.mjs",
+      "require": "./dist/prosemirror/applyFormatting.js"
+    },
+    "./prosemirror/tableResize": {
+      "types": "./dist/prosemirror/tableResize.d.ts",
+      "import": "./dist/prosemirror/tableResize.mjs",
+      "require": "./dist/prosemirror/tableResize.js"
+    },
+    "./prosemirror/cellDragSelection": {
+      "types": "./dist/prosemirror/cellDragSelection.d.ts",
+      "import": "./dist/prosemirror/cellDragSelection.mjs",
+      "require": "./dist/prosemirror/cellDragSelection.js"
+    },
+    "./prosemirror/imageCommit": {
+      "types": "./dist/prosemirror/imageCommit.d.ts",
+      "import": "./dist/prosemirror/imageCommit.mjs",
+      "require": "./dist/prosemirror/imageCommit.js"
+    },
+    "./prosemirror/commentOps": {
+      "types": "./dist/prosemirror/commentOps.d.ts",
+      "import": "./dist/prosemirror/commentOps.mjs",
+      "require": "./dist/prosemirror/commentOps.js"
+    },
+    "./prosemirror/commentIdAllocator": {
+      "types": "./dist/prosemirror/commentIdAllocator.d.ts",
+      "import": "./dist/prosemirror/commentIdAllocator.mjs",
+      "require": "./dist/prosemirror/commentIdAllocator.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/index.d.ts",
+      "import": "./dist/editor/index.mjs",
+      "require": "./dist/editor/index.js"
     },
     "./prosemirror/conversion/fromProseDoc": {
       "types": "./dist/prosemirror/conversion/fromProseDoc.d.ts",
@@ -442,6 +492,9 @@
       "utils/units": [
         "./dist/utils/units.d.ts"
       ],
+      "utils/autoScroll": [
+        "./dist/utils/autoScroll.d.ts"
+      ],
       "docx/parser": [
         "./dist/docx/parser.d.ts"
       ],
@@ -483,6 +536,33 @@
       ],
       "prosemirror/commands/paragraph": [
         "./dist/prosemirror/commands/paragraph.d.ts"
+      ],
+      "prosemirror/paraText": [
+        "./dist/prosemirror/paraText.d.ts"
+      ],
+      "prosemirror/queries": [
+        "./dist/prosemirror/queries.d.ts"
+      ],
+      "prosemirror/applyFormatting": [
+        "./dist/prosemirror/applyFormatting.d.ts"
+      ],
+      "prosemirror/tableResize": [
+        "./dist/prosemirror/tableResize.d.ts"
+      ],
+      "prosemirror/cellDragSelection": [
+        "./dist/prosemirror/cellDragSelection.d.ts"
+      ],
+      "prosemirror/imageCommit": [
+        "./dist/prosemirror/imageCommit.d.ts"
+      ],
+      "prosemirror/commentOps": [
+        "./dist/prosemirror/commentOps.d.ts"
+      ],
+      "prosemirror/commentIdAllocator": [
+        "./dist/prosemirror/commentIdAllocator.d.ts"
+      ],
+      "editor": [
+        "./dist/editor/index.d.ts"
       ],
       "prosemirror/conversion/fromProseDoc": [
         "./dist/prosemirror/conversion/fromProseDoc.d.ts"

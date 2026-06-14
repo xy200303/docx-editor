@@ -7,6 +7,7 @@
 
 import type { Command, EditorState, Transaction } from 'prosemirror-state';
 import type { Node as PMNode } from 'prosemirror-model';
+import type { EditorView } from 'prosemirror-view';
 import { singletonManager } from '../schema';
 import { makeRevisionInfo } from '../plugins/revisionIds';
 import type {
@@ -51,6 +52,67 @@ export function insertImageNode(
   }
   dispatch(tr.scrollIntoView());
   return true;
+}
+
+/**
+ * Default max width (px) for an image inserted from a file picker — the content
+ * area of a US Letter page at 96dpi (~6.375in). Images wider than this are
+ * scaled down to fit the column, matching Word and keeping the painter's
+ * `max-width: 100%` from shrinking the rendered height out from under the
+ * reserved line height (which would leave a gap below the image).
+ */
+export const INSERT_IMAGE_MAX_WIDTH_PX = 612;
+
+/**
+ * Read an image `File` (from a file picker or drop), fit it to the page width,
+ * and insert it inline at the current selection. This is the single source of
+ * truth for "insert an image from a file" — the React and Vue adapters both
+ * call it, so insertion behaves identically: no intermediate dialog, the image
+ * is sized to fit the column, and it round-trips as an inline drawing (with the
+ * `insertion` mark applied in suggesting mode, via {@link insertImageNode}).
+ *
+ * The decode is async (FileReader → Image); `onError` reports a failed read or
+ * decode, and `onInserted` runs after the node lands (e.g. to refocus).
+ *
+ * @public
+ */
+export function insertImageFromFile(
+  view: EditorView,
+  file: File,
+  opts?: { maxWidth?: number; onError?: (error: unknown) => void; onInserted?: () => void }
+): void {
+  const maxWidth = opts?.maxWidth ?? INSERT_IMAGE_MAX_WIDTH_PX;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result as string;
+    const img = new Image();
+    img.onload = () => {
+      let width = img.naturalWidth;
+      let height = img.naturalHeight;
+      if (width > maxWidth) {
+        height = Math.round(height * (maxWidth / width));
+        width = maxWidth;
+      }
+      const imageNode = view.state.schema.nodes.image.create({
+        src: dataUrl,
+        alt: file.name,
+        width,
+        height,
+        // Entropy beyond the timestamp so two images inserted in the same
+        // millisecond can't collide on rId (mirrors the clipboard-paste path).
+        rId: `rId_img_${Date.now()}_${Math.round(Math.random() * 1e9)}`,
+        wrapType: 'inline',
+        displayMode: 'inline',
+      });
+      insertImageNode(view.state, view.dispatch, imageNode, view.state.selection.from);
+      view.focus();
+      opts?.onInserted?.();
+    };
+    img.onerror = () => opts?.onError?.(new Error('Failed to decode image'));
+    img.src = dataUrl;
+  };
+  reader.onerror = () => opts?.onError?.(reader.error);
+  reader.readAsDataURL(file);
 }
 
 /**

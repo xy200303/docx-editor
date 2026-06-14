@@ -10,6 +10,7 @@
 import type { NumberFormat } from '../../types/document';
 import type { ParagraphAttrs as PMParagraphAttrs } from '../../prosemirror/schema/nodes';
 import { convertBulletToUnicode } from '../../docx/blockContentParser';
+import { padDecimal } from '../../docx/numberingParser';
 
 export function formatNumberedMarker(counters: number[], level: number): string {
   const parts: number[] = [];
@@ -76,7 +77,13 @@ function formatCounter(value: number, fmt: NumberFormat | undefined): string {
     case 'lowerLetter':
       return toLetter(value, false);
     case 'decimalZero':
-      return value < 10 ? `0${value}` : String(value);
+      return padDecimal(value, 2);
+    case 'decimalZero3':
+      return padDecimal(value, 3);
+    case 'decimalZero4':
+      return padDecimal(value, 4);
+    case 'decimalZero5':
+      return padDecimal(value, 5);
     case 'none':
       return '';
     default:
@@ -136,6 +143,16 @@ export function computeListMarker(
   }
 
   const level = numPr.ilvl ?? 0;
+
+  // numFmt="none" (ECMA-376 §17.18.59): the level shows no auto-number — its
+  // `lvlText` is taken literally (empty `lvlText` ⇒ no marker at all). Word
+  // renders such paragraphs as plain text, so don't fall through to the
+  // generic decimal formatter below and fabricate a "1." marker. (#718)
+  const levelFmt = pmAttrs.listLevelNumFmts?.[level] ?? pmAttrs.listNumFmt;
+  if (levelFmt === 'none') {
+    return pmAttrs.listMarker ? pmAttrs.listMarker : null;
+  }
+
   const counterKey = pmAttrs.listAbstractNumId ?? numId;
   const counters = listCounters.get(counterKey) ?? new Array(9).fill(0);
 

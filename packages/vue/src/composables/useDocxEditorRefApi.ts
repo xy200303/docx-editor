@@ -42,7 +42,13 @@ import {
   getSelectionInfo as getSelectionInfoImpl,
   getPageContent as getPageContentImpl,
 } from '../utils/refApiQueries';
-import { findParaIdRange } from '../utils/paraTextHelpers';
+import { findParaIdRange } from '@eigenpal/docx-editor-core/prosemirror/paraText';
+import {
+  findCommentRange,
+  findChangeRange,
+  clampRangeToDoc,
+} from '@eigenpal/docx-editor-core/prosemirror/queries';
+import { TextSelection } from 'prosemirror-state';
 import type { DocxEditorRef } from '../components/DocxEditor/types';
 import type { ApplyFormattingOptions } from './useFormattingActions';
 
@@ -179,6 +185,44 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     const pos = findContentControlPos(view.state.doc, filter);
     if (pos == null) return false;
     scrollToPosition(pos);
+    return true;
+  }
+
+  // Select `[from, to]` so the selection overlay highlights it, then scroll the
+  // start into view. Shared by the three location-reveal methods below; mirrors
+  // React's hiddenPM.setSelection + paraId-scroll path.
+  function selectAndReveal(view: EditorView, from: number, to: number): void {
+    const sel = TextSelection.between(view.state.doc.resolve(from), view.state.doc.resolve(to));
+    view.dispatch(view.state.tr.setSelection(sel));
+    opts.scrollVisiblePositionIntoView(from);
+  }
+
+  function highlightRange(from: number, to: number): void {
+    const view = opts.editorView.value;
+    if (!view) return;
+    // Raw caller positions: clampRangeToDoc returns null for a malformed or
+    // out-of-range request (no-op) and clamps `to` to the document size so
+    // doc.resolve() can't throw.
+    const range = clampRangeToDoc(view.state.doc, from, to);
+    if (!range) return;
+    selectAndReveal(view, range.from, range.to);
+  }
+
+  function scrollToCommentId(commentId: number): boolean {
+    const view = opts.editorView.value;
+    if (!view) return false;
+    const range = findCommentRange(view, commentId);
+    if (!range) return false;
+    selectAndReveal(view, range.from, range.to);
+    return true;
+  }
+
+  function scrollToChangeId(revisionId: number): boolean {
+    const view = opts.editorView.value;
+    if (!view) return false;
+    const range = findChangeRange(view, revisionId);
+    if (!range) return false;
+    selectAndReveal(view, range.from, range.to);
     return true;
   }
 
@@ -331,6 +375,9 @@ export function useDocxEditorRefApi(opts: UseDocxEditorRefApiOptions): {
     resolveComment: opts.resolveComment,
     proposeChange: opts.proposeChange,
     scrollToParaId,
+    scrollToCommentId,
+    scrollToChangeId,
+    highlightRange,
     findInDocument,
     getSelectionInfo,
     getComments,

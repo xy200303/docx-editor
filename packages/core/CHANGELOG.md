@@ -1,5 +1,93 @@
 # @eigenpal/docx-editor-core
 
+## 1.5.0
+
+### Minor Changes
+
+- 44161e5: Vue: enable drag-to-select table cells, matching React. Dragging across cell boundaries now produces a cell selection, so multi-cell operations (delete row/column across a range, fill, merge) are reachable by dragging. The cell-drag logic is shared between React and Vue in core.
+
+### Patch Changes
+
+- 7d02ec1: Fix the text cursor landing on the wrong page when a table cell's content spans a page break. The caret now follows the cell content onto the continuation page instead of staying on the previous page.
+- 04130ef: Fix "Delete row" so it removes every row a multi-cell selection spans, not just the anchor row. Selecting all rows now deletes the whole table, matching Word.
+- ab38192: Support clickable inline Word checkbox content controls
+- 5cdfa5c: Fix a tall empty gap appearing below an inline image that is wider than the page column. The painter fits such an image to the column width (scaling its height down), but the line height still reserved the image's unscaled height. The measurement now reserves the rendered (scaled) height, so the image and the following text sit flush. Most visible when inserting a large image in the Vue editor.
+- 335ad6c: Add `setGoogleFontsEnabled(false)` (from `@eigenpal/docx-editor-core` or its `/utils` entry) so strict-CSP / offline embedders can disable the automatic Google Fonts fetching entirely, and skip that fetch automatically when a font already renders locally. Embedded and consumer-hosted (`fonts` prop) faces keep their metric-compatible Google fallback for glyph coverage.
+- c5a4b1e: Fix inline images overlapping following text when they wrap to their own line, and custom-style list fidelity: zero-padded custom numbering renders as in Word (`[0001]`), picking a numbered style from the toolbar now attaches its numbering and indents, style-attached numbering keeps the style's indents over the level's, and removing a style's numbering no longer hangs the first line back to the margin. Fixes #765, fixes #766.
+- ca005c5: Fix suggesting mode so pasting over a selection marks the replaced text as a tracked deletion and the pasted text as a tracked insertion, matching the behavior of typing over a selection.
+- 7d6daeb: Fix table column widths not being respected when opening exported documents in Word. Tables with explicit column widths (created in the editor or resized by dragging a column boundary) now export with fixed layout so Word honors the widths instead of autofitting. Also corrects `w:tblPr` child ordering to match the OOXML schema.
+- 5cdfa5c: Vue: insert images directly from Insert > Image like React — the OS file picker opens and the image is placed inline, fitted to the page width, with no intermediate dialog. This also fixes a tall empty gap that appeared below an inserted image wider than the page column. The read-file-fit-and-insert flow now lives in core (`insertImageFromFile`), so React and Vue share one code path and behave identically.
+
+## 1.4.0
+
+### Minor Changes
+
+- 1ab8b30: Image resize: drag a corner handle to scale (keeping aspect ratio) or an edge handle to stretch one side (width or height) and deliberately change the aspect ratio. Selection handles are now Word-style white dots. Inserted images keep their aspect ratio — a wide image dropped into a table cell or a narrow column now scales down to fit while staying in proportion, instead of squashing or overflowing the page. Fixes #266.
+
+### Patch Changes
+
+- 28a521a: Fix the text caret being as tall as the largest font on a line. The caret now matches the font size at the insertion point (like Word) instead of the whole line box, so clicking into small text on a line that also has large text shows a correctly-sized caret. Affects React and Vue. Fixes #748.
+
+## 1.3.3
+
+### Patch Changes
+
+- bf748c0: Honor an explicit `w:header="0"` / `w:footer="0"` (header/footer pinned to the page edge) instead of replacing the 0 distance with the 0.5in default. The wrong default over-reserved the header band and could push content onto an extra page versus Word. Fixes #740.
+- 15d4f39: Fix header content overlapping the body when a header contains a floating text box (e.g. a centered banner). The floating box is now positioned without pushing the in-flow header paragraphs below it — so a centered banner sits beside the surrounding header text and the body no longer overlaps the header on multi-page documents. Inline and top-and-bottom boxes still reserve vertical space.
+- 06fa96b: Fix list-marker alignment when a list paragraph's direct indent has a `hanging` value larger than its `left` indent. The marker now hangs into the left margin to align with the surrounding text (matching Word) instead of being clamped to the content edge and shifted right. Fixes #729.
+- bd704e2: Assign every paragraph a stable id when a document is opened, so block ids and `getSelectionInfo().paraId` work before the first edit. Previously a document without `w14:paraId` had null ids until you typed or added a comment. Fixes #738.
+- 30df527: Honor an explicit `0` for layout offsets that were previously treated as "unset". A full-bleed page margin (`w:pgMar w:top/left="0"`) no longer snaps to the 1-inch default, and a text-wrapping image pinned flush to the text (`w:distL/distR="0"`) no longer opens a phantom 12px gap. Generalizes the #740 header/footer fix behind a shared nullish helper and a documented size-vs-offset rule, so the falsy-zero trap can't recur.
+
+## 1.3.2
+
+### Patch Changes
+
+- 3bd7bf7: Plain paragraphs that reference a numbering level with `numFmt="none"` are no longer rendered with a fabricated "1." marker. Word shows these as plain text, so the editor now omits the marker while keeping genuine numbered and bulleted lists intact. Fixes #718.
+- 0ded2a1: Right-to-left paragraphs now render in the correct reading order. A paragraph whose runs are marked right-to-left (`w:rtl`) but that carries no explicit bidi flag is laid out right-to-left based on its first strong character, so Hebrew and Arabic text no longer reads left-to-right. Alignment and indentation mirror to match. Fixes #719.
+- 58e3a7e: Text highlight colors are restored when a document is reloaded. Custom highlight colors outside Word's named palette are saved as character shading (`w:shd`); the importer now reads that shading back into the highlight, so the background no longer disappears on reload even though it was always present in the exported file. Fixes #712.
+
+## 1.3.1
+
+### Patch Changes
+
+- 3fe9c57: Share the layout pipeline across the React and Vue adapters. The Vue editor now renders multi-column section layouts with correct per-section column widths, coalesces a burst of keystrokes into one layout pass per frame, and no longer scrolls the page when you edit. React behavior is unchanged.
+- d100115: Fix blank render on documents whose header contains a page-anchored letterhead. The body now clears the header/footer based on in-flow content only, so anchored shapes and text boxes (which Word positions on the page) no longer push the body off the page. Fixes #705.
+- db75f4f: Fix dense footnote layout so split-paragraph references reserve space on the correct page.
+- 66cf3a8: Share the React/Vue editor orchestration through core so both adapters stay in lockstep. Vue gains three behaviors it was missing: multi-cell selection highlighting, drag-to-edge auto-scroll while selecting, and correct comment/tracked-change ID allocation (IDs are no longer reused after a delete and no longer collide across the comment/revision space). Vue selection rectangles now also cover tab stops and hyperlink text. No public API changes.
+
+## 1.3.0
+
+### Minor Changes
+
+- 5e51a9b: Fix the caret, drag-selection highlight, and table cell-selection highlight appearing in the header while editing the footer. The active header/footer is now resolved per section, so they render in the region being edited. The header/footer caret also stays glued to the text while scrolling instead of drifting away. The hovered region shows a text cursor in edit mode, and the inactive region shows a normal arrow. Fixes #671
+
+  The `@public` `computeHfCaretRectFromView` and `computeHfSelectionRectsFromView` (exported from `@eigenpal/docx-editor-core/layout-bridge`) now take a required `section: 'header' | 'footer'` argument.
+
+- 1be9cf5: Edit and track-change footnote and endnote bodies.
+
+  Note bodies are now serialized on save, so edits and tracked changes (`w:ins` /
+  `w:del`) inside footnotes and endnotes persist instead of being dropped — the
+  run model preserves the separator markers and the in-body auto-number marks, and
+  `repackDocx` writes `word/footnotes.xml` / `word/endnotes.xml` from the model.
+  `DocxReviewer.getChanges()` gains `includeFootnotes` / `includeEndnotes` options;
+  when set, tracked changes inside note bodies are reported with `noteId` /
+  `noteType`.
+
+- 0f3eb97: Fix watermark fidelity when saving to OOXML. Picture watermarks applied across a document's headers now bind each header to its own image relationship (previously the same relationship id was reused across header parts, which could break the image on title or even pages). Watermarks now also appear on title pages and even pages by creating the first/even header parts a section displays but lacks, without disturbing existing header inheritance. Picture watermarks keep the image's aspect ratio instead of being forced into a square.
+- eaa6f7f: Add MS Word–style watermarks. Watermarks in opened documents now render behind the body content on every page, and a new Insert → Watermark dialog lets you add, edit, or remove text watermarks (preset or custom, with font, color, diagonal/horizontal layout, and semitransparent options) and picture watermarks (with scale and washout). Watermarks round-trip back to valid OOXML so Word shows the same result.
+
+### Patch Changes
+
+- 15966fc: Stop squashing anchored images that sit near the right edge of the page. A floating image positioned so its width reaches into the page margin (e.g. a logo flush to the top-right) was being capped to the remaining content width by the global `img { max-width: 100% }` reset and then stretched against its fixed height. Painted floating images now keep their exact OOXML size.
+- 2003cec: Honor an anchored text box's horizontal position in headers and footers. A text box anchored centered relative to the page (e.g. a "For Internal Use" classification banner) now renders centered instead of pinned to the left.
+- cb5f622: Preserve mid-body section breaks (`w:pPr/w:sectPr`) on headless roundtrip. A parseDocx → repackDocx roundtrip no longer collapses a multi-section document down to its final section. Fixes #680.
+- 5fcca3b: Content controls (`w:sdt`) inside footnote and endnote bodies now round-trip through the editable model instead of freezing the whole note to a verbatim copy. Notes whose only block-level construct is a content control stay fully editable; the verbatim fallback now applies only to notes carrying block-level bookmarks or `w:customXml`.
+- f73706e: Stop dropping several properties on headless roundtrip. Table row-level conditional formatting (`w:trPr/w:cnfStyle`, e.g. header-row/banding context) is now serialized, matching the cell path. Explicit "off" formatting overrides also survive: a run or paragraph that cancels a style value (`<w:strike w:val="0"/>`, `<w:keepNext w:val="0"/>`, and similar for doubleStrike, smallCaps, allCaps, outline, shadow, emboss, imprint, vanish, rtl, cs, keepLines, contextualSpacing, pageBreakBefore, suppressLineNumbers, suppressAutoHyphens, bidi) previously serialized to nothing and silently re-inherited the style value.
+- 0d5beed: Fix long content in a table row getting cut off / hidden instead of flowing across pages. A table cell now measures its stacked paragraphs the way it paints them — collapsing adjacent paragraph before/after spacing (like Word) instead of adding it — so the row's height matches what's rendered and page breaks land on whole lines instead of slicing a line in two. Selecting text across a table that spans a page break no longer scatters selection highlights into the gap between pages, and contextual spacing is now suppressed inside table cells. Fixes #570.
+- 5b38696: Render vertically-merged table cells like Word when a table crosses a page. Merged cells now keep their column and borders on the continuation page (instead of disappearing and shifting the other cells), and a tall merged cell flows its content across the page break (the row breaks mid-content like Word, honoring `w:cantSplit`). Each fragment closes with a border on the cut edge at the page break — including the merged column when it spans the boundary — and horizontal cell borders no longer render unevenly thick due to sub-pixel positioning. Fixes #666.
+- 15966fc: Render anchored text boxes with `topAndBottom` wrapping at their OOXML position instead of in the body flow. A title banner pinned to the top of the page (a shape with `wp:wrapTopAndBottom` and a page-relative vertical anchor) now sits flush at the page top with the body text flowing below it, matching Word, instead of being dropped into the text where its anchor paragraph happens to fall.
+- f3d6861: Fix text selection not showing in Vue headers and footers. Selecting text while editing a header or footer now paints the highlight (the body overlay was suppressed in HF mode but the HF rects were never drawn), and double/triple-click word and paragraph selection resolves against the header/footer text instead of a body run at the same position. On multi-page documents, the caret and selection now render on the header/footer instance being edited rather than always on page one's copy. Fixes #691
+
 ## 1.2.1
 
 ### Patch Changes

@@ -118,7 +118,12 @@ export type { TableContextInfo, BorderPreset, InsertTableOptions } from './table
 export { insertPageBreak } from './pageBreak';
 
 // Image commands
-export { setImageWrapType, insertImageNode } from './image';
+export {
+  setImageWrapType,
+  insertImageNode,
+  insertImageFromFile,
+  INSERT_IMAGE_MAX_WIDTH_PX,
+} from './image';
 export type { AnchorWrapType, ImageLayoutTarget, SetImageWrapTypeOptions } from './image';
 
 // Table of Contents

@@ -20,11 +20,10 @@ import type {
   Theme,
   RelationshipMap,
   MediaFile,
-  NumberFormat,
   TrackedChangeInfo,
 } from '../types/document';
 import type { StyleMap } from './styleParser';
-import type { NumberingMap } from './numberingParser';
+import { computeListRendering, type NumberingMap } from './numberingParser';
 import { findChild, getAttribute, type XmlElement } from './xmlParser';
 import { parseSectionProperties } from './sectionParser';
 import { consolidateParagraphContent } from './runConsolidator';
@@ -155,89 +154,81 @@ export function parseParagraph(
   // Compute list rendering if this is a list item.
   // numPr can come from inline pPr or from the referenced paragraph style.
   let effectiveNumPr = paragraph.formatting?.numPr;
+  let numPrFromStyle = false;
   if (!effectiveNumPr && paragraph.formatting?.styleId && styles) {
     const style = styles.get(paragraph.formatting.styleId);
     if (style?.pPr?.numPr) {
       effectiveNumPr = style.pPr.numPr;
-      // Store it on the paragraph formatting so downstream code sees it
+      numPrFromStyle = true;
+      // Store it on the paragraph formatting so downstream code sees it,
+      // and record the provenance so the serializer can drop it again —
+      // materializing style numbering as direct <w:numPr> flips Word's
+      // level-indent precedence on the saved file.
       if (!paragraph.formatting) paragraph.formatting = {};
       paragraph.formatting.numPr = effectiveNumPr;
+      paragraph.formatting.numPrFromStyle = effectiveNumPr;
     }
   }
 
   if (effectiveNumPr && numbering) {
-    const { numId, ilvl = 0 } = effectiveNumPr;
-    if (numId !== undefined && numId !== 0) {
-      const level = numbering.getLevel(numId, ilvl);
-      if (level) {
-        // Collect numFmts for levels 0..ilvl so multi-level templates like
-        // "%1.%2." can resolve each %N with its own format (e.g., upperRoman
-        // parent + decimal child).
-        const levelNumFmts: NumberFormat[] = [];
-        for (let i = 0; i <= ilvl; i += 1) {
-          const parent = numbering.getLevel(numId, i);
-          levelNumFmts.push(parent?.numFmt ?? 'decimal');
+    const rendering = computeListRendering(effectiveNumPr, numbering);
+    if (rendering) {
+      paragraph.listRendering = rendering;
+
+      // Apply level's paragraph properties (indentation) as defaults.
+      // Per OOXML spec, direct w:ind on the paragraph overrides numbering
+      // level indent — only use numbering indent as fallback.
+      //
+      // When the numbering reference itself comes from the paragraph STYLE
+      // (style pPr numPr), Word gives the style chain's own w:ind
+      // precedence over the numbering level's — e.g. a "Claim" style with
+      // ind left=1134 hanging=1134 referencing a level with 360/360 lays
+      // out at 1134. Skip the level indents the style chain covers; the
+      // toProseDoc style fallback supplies the style values. Resolution is
+      // per group (left vs firstLine/hanging) so a chain that only defines
+      // `left` (e.g. ListParagraph) still takes the level's hanging —
+      // mirrors listAttrsFromResolvedStyle so the picker and the loader
+      // resolve a style identically. Direct paragraph numPr keeps the
+      // level-over-style behavior (Word's toolbar-list case).
+      const chainInd = numPrFromStyle
+        ? styleChainInd(paragraph.formatting?.styleId, styles)
+        : { left: false, firstLine: false };
+      const level = numbering.getLevel(rendering.numId, rendering.level);
+      if (level?.pPr) {
+        if (!paragraph.formatting) {
+          paragraph.formatting = {};
         }
-
-        const instance = numbering.getInstance(numId);
-        const overrideForLevel = instance?.levelOverrides?.find((o) => o.ilvl === ilvl);
-
-        paragraph.listRendering = {
-          level: ilvl,
-          numId,
-          marker: level.lvlText,
-          isBullet: level.numFmt === 'bullet',
-          numFmt: level.numFmt,
-          markerHidden: level.rPr?.hidden || undefined,
-          markerFontFamily:
-            level.rPr?.fontFamily?.ascii || level.rPr?.fontFamily?.hAnsi || undefined,
-          // w:sz is in half-points; convert to points for downstream use
-          markerFontSize: level.rPr?.fontSize ? level.rPr.fontSize / 2 : undefined,
-          markerSuffix: level.suffix,
-          levelNumFmts,
-          abstractNumId: instance?.abstractNumId,
-          startOverride: overrideForLevel?.startOverride,
+        const directInd = pPr ? findChild(pPr, 'w', 'ind') : null;
+        const hasDirectLeft =
+          directInd != null &&
+          (getAttribute(directInd, 'w', 'left') !== null ||
+            getAttribute(directInd, 'w', 'start') !== null);
+        // Per ECMA-376 §17.3.1.12 (CT_Ind), `w:firstLine` and `w:hanging`
+        // are ST_TwipsMeasure values; a value of `0` is semantically
+        // identical to omitting the attribute. Treat both `firstLine="0"`
+        // and `hanging="0"` as no-op so the numbering level's indent
+        // still applies. A non-numeric value parses to NaN and falls
+        // through as an override, preserving prior behavior on
+        // malformed input.
+        const hasNonZeroDirectAttr = (name: 'firstLine' | 'hanging'): boolean => {
+          const raw = directInd ? getAttribute(directInd, 'w', name) : null;
+          if (raw === null) return false;
+          const value = parseInt(raw, 10);
+          return Number.isNaN(value) || value !== 0;
         };
+        const hasDirectFirstLineOrHanging =
+          directInd != null &&
+          (hasNonZeroDirectAttr('firstLine') || hasNonZeroDirectAttr('hanging'));
 
-        // Apply level's paragraph properties (indentation) as defaults.
-        // Per OOXML spec, direct w:ind on the paragraph overrides numbering
-        // level indent — only use numbering indent as fallback.
-        if (level.pPr) {
-          if (!paragraph.formatting) {
-            paragraph.formatting = {};
+        if (!hasDirectLeft && !chainInd.left && level.pPr.indentLeft !== undefined) {
+          paragraph.formatting.indentLeft = level.pPr.indentLeft;
+        }
+        if (!hasDirectFirstLineOrHanging && !chainInd.firstLine) {
+          if (level.pPr.indentFirstLine !== undefined) {
+            paragraph.formatting.indentFirstLine = level.pPr.indentFirstLine;
           }
-          const directInd = pPr ? findChild(pPr, 'w', 'ind') : null;
-          const hasDirectLeft =
-            directInd != null &&
-            (getAttribute(directInd, 'w', 'left') !== null ||
-              getAttribute(directInd, 'w', 'start') !== null);
-          // Per ECMA-376 §17.3.1.12 (CT_Ind), `w:firstLine` and `w:hanging`
-          // are ST_TwipsMeasure values; a value of `0` is semantically
-          // identical to omitting the attribute. Treat both `firstLine="0"`
-          // and `hanging="0"` as no-op so the numbering level's indent
-          // still applies. A non-numeric value parses to NaN and falls
-          // through as an override, preserving prior behavior on
-          // malformed input.
-          const hasNonZeroDirectAttr = (name: 'firstLine' | 'hanging'): boolean => {
-            const raw = directInd ? getAttribute(directInd, 'w', name) : null;
-            if (raw === null) return false;
-            const value = parseInt(raw, 10);
-            return Number.isNaN(value) || value !== 0;
-          };
-          const hasDirectFirstLineOrHanging =
-            directInd != null &&
-            (hasNonZeroDirectAttr('firstLine') || hasNonZeroDirectAttr('hanging'));
-
-          if (!hasDirectLeft && level.pPr.indentLeft !== undefined) {
-            paragraph.formatting.indentLeft = level.pPr.indentLeft;
-          }
-          if (!hasDirectFirstLineOrHanging) {
-            if (level.pPr.indentFirstLine !== undefined) {
-              paragraph.formatting.indentFirstLine = level.pPr.indentFirstLine;
-            }
-            if (level.pPr.hangingIndent !== undefined) {
-              paragraph.formatting.hangingIndent = level.pPr.hangingIndent;
-            }
+          if (level.pPr.hangingIndent !== undefined) {
+            paragraph.formatting.hangingIndent = level.pPr.hangingIndent;
           }
         }
       }
@@ -245,4 +236,32 @@ export function parseParagraph(
   }
 
   return paragraph;
+}
+
+/**
+ * Which indent groups the basedOn chain defines: `left` (w:ind left) and
+ * `firstLine` (w:ind firstLine/hanging). Walks from the given style up the
+ * chain; cycles are guarded. Grouping matches listAttrsFromResolvedStyle.
+ */
+function styleChainInd(
+  styleId: string | undefined,
+  styles?: StyleMap | null
+): { left: boolean; firstLine: boolean } {
+  const result = { left: false, firstLine: false };
+  if (!styleId || !styles) return result;
+  const seen = new Set<string>();
+  let current: string | undefined = styleId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const style = styles.get(current);
+    if (!style) break;
+    const p = style.pPr;
+    if (p) {
+      result.left ||= p.indentLeft !== undefined;
+      result.firstLine ||= p.indentFirstLine !== undefined || p.hangingIndent !== undefined;
+    }
+    if (result.left && result.firstLine) break;
+    current = style.basedOn;
+  }
+  return result;
 }

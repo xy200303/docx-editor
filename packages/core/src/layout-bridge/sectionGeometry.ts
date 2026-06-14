@@ -7,7 +7,8 @@
  * drift that grows when each adapter ships its own twipsToPixels math.
  */
 
-import type { PageMargins } from '../layout-engine/types';
+import { collectSectionConfigs, type SectionLayoutConfig } from '../layout-engine';
+import type { ColumnLayout, FlowBlock, PageMargins } from '../layout-engine/types';
 import type { Document, SectionProperties } from '../types/document';
 import type { HeaderFooter } from '../types/content';
 
@@ -20,11 +21,39 @@ export const DEFAULT_BODY_MARGIN_PX = 96;
 /** Word's default `headerDistance` / `footerDistance` (0.5in = 48px). */
 export const DEFAULT_HF_DISTANCE_PX = 48;
 
-function twipsToPixels(twips: number): number {
+/** Convert twips to pixels (1 twip = 1/20 point, 96 pixels per inch). */
+export function twipsToPixels(twips: number): number {
   return Math.round((twips / 1440) * 96);
 }
 
-/** Convert SectionProperties page size (twips) → pixel `{ w, h }`. */
+/**
+ * Convert an OFFSET-like twip dimension (page margin, header/footer distance)
+ * to px, falling back to `fallbackPx` ONLY when the value is absent.
+ *
+ * Use this — not `value ? twipsToPixels(value) : fallback` — for any dimension
+ * where `0` is a meaningful, explicit value distinct from "not set". A truthy
+ * test treats `0` as absent and substitutes the default, which silently breaks
+ * documents that pin a margin/header/footer to 0 (e.g. full-bleed layouts, or
+ * `w:header="0"` — issue #740). `parseNumericAttribute` already returns
+ * `undefined` for a missing attribute and `0` for `="0"`, so a nullish guard is
+ * the correct discriminator.
+ *
+ * NOTE: this is for OFFSETS, not SIZES. A size (page width/height, image/shape
+ * extent) treats `0` as malformed/missing and SHOULD fall back — honoring a
+ * literal `0` there would render a zero-area element. Keep the truthy guard for
+ * sizes; use this helper for offsets.
+ */
+export function twipsToPxOr(twips: number | null | undefined, fallbackPx: number): number {
+  return twips != null ? twipsToPixels(twips) : fallbackPx;
+}
+
+/**
+ * Convert SectionProperties page size (twips) → pixel `{ w, h }`.
+ *
+ * Page size is a SIZE: a literal `0` (malformed `w:pgSz`) defaults to Letter
+ * rather than rendering a zero-area page — so the truthy guard is intentional
+ * here (contrast `getMargins`, where `0` is honored). See `twipsToPxOr`.
+ */
 export function getPageSize(sp: SectionProperties | null | undefined): {
   w: number;
   h: number;
@@ -38,17 +67,20 @@ export function getPageSize(sp: SectionProperties | null | undefined): {
 /**
  * Convert SectionProperties margins (twips) → pixel `PageMargins`.
  *
- * `header` / `footer` default to 48px (Word's 0.5-inch default) so the
- * HF margin-extension math doesn't have to special-case undefined.
+ * Every distance is an OFFSET, so an explicit `0` is honored (full-bleed body
+ * margins; a header/footer pinned to the page edge — issue #740). Only an
+ * ABSENT distance falls back to Word's default. `header`/`footer` default to
+ * 48px (Word's 0.5in) so the HF margin-extension math needn't special-case
+ * undefined.
  */
 export function getMargins(sp: SectionProperties | null | undefined): PageMargins {
   return {
-    top: sp?.marginTop ? twipsToPixels(sp.marginTop) : DEFAULT_BODY_MARGIN_PX,
-    right: sp?.marginRight ? twipsToPixels(sp.marginRight) : DEFAULT_BODY_MARGIN_PX,
-    bottom: sp?.marginBottom ? twipsToPixels(sp.marginBottom) : DEFAULT_BODY_MARGIN_PX,
-    left: sp?.marginLeft ? twipsToPixels(sp.marginLeft) : DEFAULT_BODY_MARGIN_PX,
-    header: sp?.headerDistance ? twipsToPixels(sp.headerDistance) : DEFAULT_HF_DISTANCE_PX,
-    footer: sp?.footerDistance ? twipsToPixels(sp.footerDistance) : DEFAULT_HF_DISTANCE_PX,
+    top: twipsToPxOr(sp?.marginTop, DEFAULT_BODY_MARGIN_PX),
+    right: twipsToPxOr(sp?.marginRight, DEFAULT_BODY_MARGIN_PX),
+    bottom: twipsToPxOr(sp?.marginBottom, DEFAULT_BODY_MARGIN_PX),
+    left: twipsToPxOr(sp?.marginLeft, DEFAULT_BODY_MARGIN_PX),
+    header: twipsToPxOr(sp?.headerDistance, DEFAULT_HF_DISTANCE_PX),
+    footer: twipsToPxOr(sp?.footerDistance, DEFAULT_HF_DISTANCE_PX),
   };
 }
 
@@ -100,4 +132,61 @@ export function resolveHeaderFooter(
   }
 
   return { header, footer, firstHeader, firstFooter };
+}
+
+/**
+ * Extract column layout from section properties.
+ * Returns undefined for single-column (default) to avoid unnecessary paginator overhead.
+ */
+export function getColumns(
+  sectionProps: SectionProperties | null | undefined
+): ColumnLayout | undefined {
+  const count = sectionProps?.columnCount ?? 1;
+  if (count <= 1) return undefined;
+  // Default column spacing: 720 twips (0.5 inch) per OOXML spec
+  const gap = twipsToPixels(sectionProps?.columnSpace ?? 720);
+  return {
+    count,
+    gap,
+    equalWidth: sectionProps?.equalWidth ?? true,
+    separator: sectionProps?.separator,
+  };
+}
+
+export function columnWidthForSection(config: SectionLayoutConfig): number {
+  const contentWidth = config.pageSize.w - config.margins.left - config.margins.right;
+  const cols = config.columns;
+  if (!cols || cols.count <= 1) return contentWidth;
+  return Math.floor((contentWidth - (cols.count - 1) * cols.gap) / cols.count);
+}
+
+/**
+ * Compute per-block measurement widths by scanning for section breaks.
+ * Blocks must be measured with the page width/margins/columns of their own
+ * section so that the layout engine can paginate them against the right
+ * geometry without remeasuring.
+ */
+export function computePerBlockWidths(
+  blocks: FlowBlock[],
+  initialConfig: SectionLayoutConfig,
+  finalConfig: SectionLayoutConfig
+): number[] {
+  const { configs: sectionConfigs, breakIndices } = collectSectionConfigs(
+    blocks,
+    initialConfig,
+    finalConfig
+  );
+
+  let sectionIdx = 0;
+  const widths: number[] = [];
+
+  for (let i = 0; i < blocks.length; i++) {
+    widths.push(columnWidthForSection(sectionConfigs[sectionIdx] ?? initialConfig));
+
+    if (sectionIdx < breakIndices.length && i === breakIndices[sectionIdx]) {
+      sectionIdx++;
+    }
+  }
+
+  return widths;
 }

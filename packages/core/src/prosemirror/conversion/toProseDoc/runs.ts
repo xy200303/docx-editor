@@ -288,11 +288,16 @@ function convertImage(image: Image): PMNode {
     }
   }
 
-  // Convert wrap distances from EMU to pixels for margins
-  const distTop = image.wrap.distT ? emuToPixels(image.wrap.distT) : undefined;
-  const distBottom = image.wrap.distB ? emuToPixels(image.wrap.distB) : undefined;
-  const distLeft = image.wrap.distL ? emuToPixels(image.wrap.distL) : undefined;
-  const distRight = image.wrap.distR ? emuToPixels(image.wrap.distR) : undefined;
+  // Convert wrap distances from EMU to pixels for margins. Nullish, not truthy:
+  // an explicit `w:distL="0"` (image butted flush against the wrapped text) is a
+  // meaningful 0 that must survive — collapsing it to `undefined` lets the
+  // float-zone fall back to its non-zero default (12px L/R), opening a phantom
+  // gap. Only an ABSENT distance should fall back. Same falsy-zero class as the
+  // page-margin/header fixes (#740).
+  const distTop = image.wrap.distT != null ? emuToPixels(image.wrap.distT) : undefined;
+  const distBottom = image.wrap.distB != null ? emuToPixels(image.wrap.distB) : undefined;
+  const distLeft = image.wrap.distL != null ? emuToPixels(image.wrap.distL) : undefined;
+  const distRight = image.wrap.distR != null ? emuToPixels(image.wrap.distR) : undefined;
 
   // Build position data for floating images
   let position:

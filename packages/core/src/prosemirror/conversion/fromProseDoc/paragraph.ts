@@ -171,6 +171,20 @@ function insertCommentRanges(content: ParagraphContent[], paragraph: PMNode): Pa
   return result;
 }
 
+/**
+ * Whether the paragraph's numbering still comes verbatim from its style —
+ * serialize no direct `<w:numPr>` then. The moment a list command changes
+ * `numPr` the values diverge and the numbering serializes as direct
+ * formatting, so a stale provenance value can never swallow a user edit.
+ */
+function isStyleSourcedNumPr(attrs: ParagraphAttrs): boolean {
+  return (
+    attrs.numPrFromStyle != null &&
+    attrs.numPr != null &&
+    JSON.stringify(attrs.numPr) === JSON.stringify(attrs.numPrFromStyle)
+  );
+}
+
 function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting | undefined {
   // If we have the original inline formatting from the DOCX, use it as a base
   // for lossless round-trip. This preserves properties like contextualSpacing,
@@ -190,10 +204,16 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     if (attrs.alignment !== (orig.alignment || undefined)) {
       result.alignment = attrs.alignment || undefined;
     }
-    if (attrs.numPr !== orig.numPr) {
+    if (isStyleSourcedNumPr(attrs)) {
+      // The numbering still comes verbatim from the paragraph style — don't
+      // materialize it as direct formatting (see ParagraphAttrs.numPrFromStyle).
+      delete result.numPr;
+      delete result.numPrFromStyle;
+    } else if (attrs.numPr !== orig.numPr) {
       // Use JSON comparison since these are objects
       if (JSON.stringify(attrs.numPr) !== JSON.stringify(orig.numPr)) {
         result.numPr = attrs.numPr || undefined;
+        delete result.numPrFromStyle;
       }
     }
     if (attrs.styleId !== (orig.styleId || undefined)) {
@@ -242,7 +262,7 @@ function paragraphAttrsToFormatting(attrs: ParagraphAttrs): ParagraphFormatting 
     indentRight: attrs.indentRight || undefined,
     indentFirstLine: attrs.indentFirstLine || undefined,
     hangingIndent: attrs.hangingIndent || undefined,
-    numPr: attrs.numPr || undefined,
+    numPr: isStyleSourcedNumPr(attrs) ? undefined : attrs.numPr || undefined,
     styleId: attrs.styleId || undefined,
     borders: attrs.borders || undefined,
     shading: attrs.shading || undefined,

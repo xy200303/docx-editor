@@ -89,6 +89,9 @@ export {
 // Numbering / lists
 export {
   parseNumbering,
+  createNumberingMap,
+  getCachedNumberingMap,
+  computeListRendering,
   formatNumber,
   renderListMarker,
   getBulletCharacter,

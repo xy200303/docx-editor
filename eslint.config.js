@@ -193,21 +193,36 @@ export default [
 
   // layout-engine/types.ts is the canonical schema definition for the
   // layout model — single file by design (cross-referencing types). Bumped
-  // modestly above the default to accommodate new revision-tracking
-  // fields without forcing a split that would obscure the schema.
+  // modestly above the default to accommodate new revision-tracking and
+  // table-pagination fields without forcing a split that would obscure the
+  // schema.
   {
     files: ['packages/core/src/layout-engine/types.ts'],
     rules: {
-      'max-lines': ['error', { max: 1050, skipBlankLines: false, skipComments: false }],
+      'max-lines': ['error', { max: 1080, skipBlankLines: false, skipComments: false }],
     },
   },
 
   // DocxEditor.vue is the host component — same role as React's
-  // DocxEditor.tsx (which has a 2000-line cap). Vue's SFC sits at 1000
-  // exact; eslint counts an extra blank/EOF line that wc -l doesn't,
-  // so allow modest headroom while a real split is planned.
+  // DocxEditor.tsx (which has a 2000-line cap). The React-parity callback
+  // props (#720) add per-prop wiring that must live inline in the SFC (the
+  // handlers are passed into useDocxEditor and can't be hoisted); the reusable
+  // pieces were extracted to useHostCallbacks. Modest headroom while a real
+  // split is planned.
   {
     files: ['packages/vue/src/components/DocxEditor.vue'],
+    rules: {
+      'max-lines': ['error', { max: 1145, skipBlankLines: false, skipComments: false }],
+    },
+  },
+
+  // Toolbar.vue is the formatting-bar SFC — a single template/script/style
+  // block covering every toolbar control. Localizing the tooltips and adding
+  // aria-labels pushed it just over the default 1000, since each labelled
+  // button wraps to multiple lines under printWidth. Modest headroom while a
+  // real split is planned; the cap still enforces a ceiling.
+  {
+    files: ['packages/vue/src/components/Toolbar.vue'],
     rules: {
       'max-lines': ['error', { max: 1100, skipBlankLines: false, skipComments: false }],
     },

@@ -125,5 +125,14 @@ describe('wrapNone floating image rendering', () => {
     expect(firstLine).toBeTruthy();
     expect(parseFloat(firstLine!.style.marginLeft || '0')).toBe(0);
     expect(parseFloat(firstLine!.style.marginRight || '0')).toBe(0);
+
+    // The painted float keeps its explicit OOXML size and opts out of the
+    // global `img { max-width: 100% }` reset — otherwise an image anchored near
+    // the right edge (where the remaining content width is below its own width)
+    // is capped and squashed against its fixed height.
+    const floatImg = el.querySelector<HTMLImageElement>('.layout-page-floating-image img');
+    expect(floatImg).toBeTruthy();
+    expect(floatImg!.style.width).toBe('96px');
+    expect(floatImg!.style.maxWidth).toBe('none');
   });
 });

@@ -171,6 +171,10 @@ export interface ParagraphAttrs {
         numId?: number;
         ilvl?: number;
     };
+    numPrFromStyle?: {
+        numId?: number;
+        ilvl?: number;
+    };
     _originalFormatting?: ParagraphFormatting;
     // (undocumented)
     outlineLevel?: number;
@@ -220,6 +224,7 @@ export interface TableAttrs {
     look?: TableLook;
     _originalFormatting?: TableFormatting;
     styleId?: string;
+    tableLayout?: 'fixed' | 'autofit' | null;
     tblPrChange?: TablePropertyChange[] | null;
     width?: number;
     widthType?: string;

@@ -67,6 +67,15 @@ export {
 export type { RenderPagesUpdateKind };
 export type { HeaderFooterContent, RenderPageOptions, FootnoteRenderItem } from './renderPage';
 
+// Anchored-object position resolution — shared with the measure pipeline so the
+// reserved float band lines up with where the painter places the object.
+export {
+  resolveAnchoredObjectPosition,
+  resolveAnchoredObjectVerticalTop,
+  pageGeometryFromPage,
+  type PageGeometry,
+} from './anchoredObjectPosition';
+
 // Block-level content-control (SDT) focus chrome — keep the boundary box and
 // label visible while the caret is inside the control, shared by both adapters.
 export { enclosingSdtGroupIds, applySdtFocus } from './sdtBoundary';
@@ -97,6 +106,22 @@ export interface BlockLookupEntry {
  * Block lookup map type
  */
 export type BlockLookup = Map<string, BlockLookupEntry>;
+
+/**
+ * Build the painter's `block.id → { block, measure }` lookup from the parallel
+ * blocks/measures arrays. Shared by both adapters' paint step.
+ */
+export function buildBlockLookup(blocks: FlowBlock[], measures: Measure[]): BlockLookup {
+  const lookup: BlockLookup = new Map();
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const measure = measures[i];
+    if (block && measure) {
+      lookup.set(String(block.id), { block, measure });
+    }
+  }
+  return lookup;
+}
 
 /**
  * Painter options

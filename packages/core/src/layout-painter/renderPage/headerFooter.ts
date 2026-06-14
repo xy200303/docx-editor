@@ -35,8 +35,18 @@ export interface HeaderFooterContent {
   blocks: FlowBlock[];
   /** Measurements for the blocks. */
   measures: Measure[];
-  /** Total height of the content. */
+  /** Total height of the content (in-flow stack incl. floating blocks). */
   height: number;
+  /**
+   * In-flow band height: the height of strictly in-flow content
+   * (paragraphs, tables, inline images/text boxes), EXCLUDING anchored /
+   * floating objects. This is what grows the header/footer band and pushes
+   * the body margin, mirroring Word: a page/margin-anchored shape (e.g. a
+   * full-page letterhead in a header) is positioned independently and does
+   * NOT push body text down. Use this — not `height`/`visualBottom` — for
+   * margin extension. Falls back to `height` when undefined.
+   */
+  flowHeight?: number;
   /** Top-most visual extent relative to the nominal flow origin. */
   visualTop?: number;
   /** Bottom-most visual extent relative to the nominal flow origin. */
@@ -120,6 +130,37 @@ function resolveHeaderFooterFloatTop(
   return floatImg.paragraphY;
 }
 
+/**
+ * Resolve the CSS `left` (px) for an anchored object (image or text box) in a
+ * header/footer, honoring `wp:positionH` (relativeTo page/margin, align
+ * left/center/right, or posOffset). Shared by floating images and text boxes so
+ * a page-centered text box in the header lands centered like Word, not pinned
+ * to the left.
+ */
+export function resolveHeaderFooterFloatLeft(
+  width: number,
+  h: { relativeTo?: string; posOffset?: number; align?: string; alignment?: string } | undefined,
+  layout: HeaderFooterLayoutInfo
+): string {
+  if (!h) return '0';
+  const align = getPositionAlignment(h);
+
+  if (h.relativeTo === 'page') {
+    if (h.posOffset !== undefined) return `${emuToPixels(h.posOffset) - layout.flowLeft}px`;
+    if (align === 'right') return `${layout.pageWidth - width - layout.flowLeft}px`;
+    if (align === 'center') return `${(layout.pageWidth - width) / 2 - layout.flowLeft}px`;
+    if (align === 'left') return `${-layout.flowLeft}px`;
+  }
+
+  // `relativeTo: margin` falls through here intentionally: the HF content width
+  // IS the margin box, so the content-relative branch is already margin-correct.
+  if (h.posOffset !== undefined) return `${emuToPixels(h.posOffset)}px`;
+  if (align === 'right') return `${layout.contentWidth - width}px`;
+  if (align === 'center') return `${(layout.contentWidth - width) / 2}px`;
+
+  return '0';
+}
+
 function applyHeaderFooterFloatHorizontalPosition(
   img: HTMLImageElement,
   floatImg: {
@@ -130,48 +171,11 @@ function applyHeaderFooterFloatHorizontalPosition(
   },
   layout: HeaderFooterLayoutInfo
 ): void {
-  const h = floatImg.position.horizontal;
-  if (!h) {
-    img.style.left = '0';
-    return;
-  }
-
-  const align = getPositionAlignment(h);
-
-  if (h.relativeTo === 'page') {
-    if (h.posOffset !== undefined) {
-      img.style.left = `${emuToPixels(h.posOffset) - layout.flowLeft}px`;
-      return;
-    }
-    if (align === 'right') {
-      img.style.left = `${layout.pageWidth - floatImg.width - layout.flowLeft}px`;
-      return;
-    }
-    if (align === 'center') {
-      img.style.left = `${(layout.pageWidth - floatImg.width) / 2 - layout.flowLeft}px`;
-      return;
-    }
-    if (align === 'left') {
-      img.style.left = `${-layout.flowLeft}px`;
-      return;
-    }
-  }
-
-  if (h.posOffset !== undefined) {
-    img.style.left = `${emuToPixels(h.posOffset)}px`;
-    return;
-  }
-
-  if (align === 'right') {
-    img.style.left = `${layout.contentWidth - floatImg.width}px`;
-    return;
-  }
-  if (align === 'center') {
-    img.style.left = `${(layout.contentWidth - floatImg.width) / 2}px`;
-    return;
-  }
-
-  img.style.left = '0';
+  img.style.left = resolveHeaderFooterFloatLeft(
+    floatImg.width,
+    floatImg.position.horizontal,
+    layout
+  );
 }
 
 /**
@@ -433,10 +437,31 @@ export function renderHeaderFooterContent(
         { ...context, positioning: 'absolute' },
         { document: doc }
       );
+      // Vertical position stays on the HF flow cursor (the anchor's positionV
+      // is not yet honored for HF text boxes); only the horizontal anchor is
+      // resolved here, which is what the reported page-centered banner needs.
       fragEl.style.top = `${cursorY}px`;
-      fragEl.style.left = '0';
+      // Honor the anchor's horizontal position (e.g. centered relative to the
+      // page) instead of pinning the box to the left.
+      fragEl.style.left = resolveHeaderFooterFloatLeft(
+        measure.width,
+        block.position?.horizontal,
+        layout
+      );
       containerEl.appendChild(fragEl);
-      cursorY += measure.height;
+      // Floating text boxes (square/tight/through/behind/inFront wrap) are
+      // positioned and do NOT advance the flow — surrounding header content
+      // flows as if the box weren't there, mirroring floating tables above and
+      // matching Word: a centered banner sits beside the left/right header text
+      // instead of pushing it down. This also keeps a tall page-anchored
+      // letterhead from shoving the in-flow content past the header band
+      // (#705). Advancing for a float made the in-flow content overflow the
+      // band (which excludes floats from `flowHeight`) and overlap the body.
+      // Inline and topAndBottom boxes still stack on the cursor (they reserve
+      // in-flow vertical space).
+      if (block.displayMode !== 'float') {
+        cursorY += measure.height;
+      }
     } else if (
       block.kind === 'sectionBreak' ||
       block.kind === 'pageBreak' ||

@@ -1,5 +1,33 @@
 # @eigenpal/docx-editor-agents
 
+## 1.5.0
+
+### Minor Changes
+
+- c4fd221: `DocxReviewer` can now accept/reject tracked changes inside footnote and endnote bodies. Pass a `ReviewChange` from `getChanges` (it carries `noteId`/`noteType`) to `acceptChange`/`rejectChange` to resolve a change wherever it lives, or use `acceptAll`/`rejectAll` with `{ includeFootnotes, includeEndnotes }` to resolve note changes in bulk. The result persists through `toBuffer()`. Previously these methods operated on the document body only; the numeric `acceptChange(id)` form is unchanged.
+
+## 1.4.0
+
+## 1.3.3
+
+## 1.3.2
+
+## 1.3.1
+
+## 1.3.0
+
+### Minor Changes
+
+- 1be9cf5: Edit and track-change footnote and endnote bodies.
+
+  Note bodies are now serialized on save, so edits and tracked changes (`w:ins` /
+  `w:del`) inside footnotes and endnotes persist instead of being dropped — the
+  run model preserves the separator markers and the in-body auto-number marks, and
+  `repackDocx` writes `word/footnotes.xml` / `word/endnotes.xml` from the model.
+  `DocxReviewer.getChanges()` gains `includeFootnotes` / `includeEndnotes` options;
+  when set, tracked changes inside note bodies are reported with `noteId` /
+  `noteType`.
+
 ## 1.2.1
 
 ### Patch Changes

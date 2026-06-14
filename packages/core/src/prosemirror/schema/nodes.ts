@@ -54,6 +54,18 @@ export interface ParagraphAttrs {
     numId?: number;
     ilvl?: number;
   };
+  /**
+   * The style-sourced numPr value when `numPr` came from the paragraph
+   * style rather than direct formatting. While `numPr` still equals this,
+   * fromProseDoc omits it from serialized formatting (writing it as direct
+   * `<w:numPr>` would flip Word's level-indent precedence on reload). List
+   * commands that change `numPr` make the values diverge, which re-enables
+   * direct serialization — no explicit clearing needed.
+   */
+  numPrFromStyle?: {
+    numId?: number;
+    ilvl?: number;
+  };
   /** List number format (decimal, lowerRoman, upperRoman, etc.) for CSS counter styling */
   listNumFmt?: NumberFormat;
   /** Whether this is a bullet list */
@@ -261,6 +273,8 @@ export interface TableAttrs {
   justification?: 'left' | 'center' | 'right';
   /** Column widths (in twips) from w:tblGrid */
   columnWidths?: number[];
+  /** Table layout (`w:tblLayout` type). `fixed` makes Word honor explicit widths. */
+  tableLayout?: 'fixed' | 'autofit' | null;
   /** Floating table properties (w:tblpPr) */
   floating?: FloatingTableProperties;
   /** Default cell margins for the table (w:tblCellMar), in twips */

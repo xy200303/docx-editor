@@ -152,6 +152,8 @@ export {
   onFontsLoaded,
   canRenderFont,
   preloadCommonFonts,
+  setGoogleFontsEnabled,
+  isGoogleFontsEnabled,
 } from './utils/fontLoader';
 
 // ============================================================================

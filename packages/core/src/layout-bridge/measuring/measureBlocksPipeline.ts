@@ -26,6 +26,10 @@ import {
   type TextBoxBlock,
 } from '../../layout-engine';
 import { isTextWrappingFloatingImageRun } from '../../layout-painter/floatingImageFlow';
+import {
+  resolveAnchoredObjectVerticalTop,
+  type PageGeometry,
+} from '../../layout-painter/anchoredObjectPosition';
 import { emuToPixels } from '../../utils/units';
 import { clampFloatingWrapMargins } from './measureParagraph';
 import type { FloatingImageZone } from './floatingZones';
@@ -66,20 +70,42 @@ export type MeasureBlockFn = (
 ) => Measure;
 
 /**
+ * Page geometry (CSS px) used to resolve page/margin-relative anchored objects
+ * into content-area coordinates — currently the vertical anchor of a top-pinned
+ * `topAndBottom` band. Same shape the painter uses (see `pageGeometryFromPage`),
+ * so both paths resolve to identical positions.
+ *
+ * @public
+ */
+export type FloatPageGeometry = PageGeometry;
+
+/**
  * Walk `blocks` and produce one `Measure` per block. Before measuring, this
  * extracts floating exclusion zones (images / floating tables / floating
  * textboxes), groups overlapping co-located floats, and threads the active
  * zones plus cumulative Y into each `measureBlock` call.
+ *
+ * Pass `pageGeometry` whenever the document may contain page/margin-anchored
+ * `topAndBottom` text boxes (e.g. a title banner pinned to the page top):
+ * without it their reserved band falls back to flow-relative Y and the band
+ * won't line up with where the painter places the box. Build it with the
+ * shared `pageGeometryFromPage` helper.
  *
  * @public
  */
 export function measureBlocksWithFloats(
   blocks: FlowBlock[],
   contentWidth: number | number[],
-  measureBlock: MeasureBlockFn
+  measureBlock: MeasureBlockFn,
+  pageGeometry?: FloatPageGeometry
 ): Measure[] {
   const defaultWidth = Array.isArray(contentWidth) ? (contentWidth[0] ?? 0) : contentWidth;
-  const floatingZonesWithAnchors = extractFloatingZones(blocks, defaultWidth, measureBlock);
+  const floatingZonesWithAnchors = extractFloatingZones(
+    blocks,
+    defaultWidth,
+    measureBlock,
+    pageGeometry
+  );
 
   const marginRelative = floatingZonesWithAnchors.filter((z) => z.isMarginRelative);
   const paragraphRelative = floatingZonesWithAnchors.filter((z) => !z.isMarginRelative);
@@ -106,17 +132,28 @@ export function measureBlocksWithFloats(
 
   const zonesByAnchor = new Map<number, FloatingImageZone[]>();
   for (const z of adjustedZones) {
-    const existing = zonesByAnchor.get(z.anchorBlockIndex) ?? [];
-    existing.push({
-      leftMargin: z.leftMargin,
-      rightMargin: z.rightMargin,
-      topY: z.topY,
-      bottomY: z.bottomY,
-    });
-    zonesByAnchor.set(z.anchorBlockIndex, existing);
+    // A page/margin-pinned full-width band (e.g. a title banner at the top of
+    // the page) reserves space from the top of content, so it must reach the
+    // blocks that precede its own anchor paragraph. Anchor it at block 0 and
+    // keep its content-relative topY/bottomY (cumulativeY is then the running
+    // content offset for the blocks it covers).
+    //
+    // Caveat: this pre-pagination pass has no page/section model, so "top of
+    // content" means the start of the whole flow. Exact for the common case
+    // (single banner near the document start); a band anchored on a later page
+    // or in a later section with different geometry can over-reach. Follow-up.
+    const anchor = z.fullWidthBlock && z.isMarginRelative ? 0 : z.anchorBlockIndex;
+    const existing = zonesByAnchor.get(anchor) ?? [];
+    // Strip the anchor-tracking fields; the rest IS a FloatingImageZone. Spread
+    // (rather than copying each field) so new zone fields can't be dropped here.
+    const { anchorBlockIndex: _anchorBlockIndex, isMarginRelative: _isMarginRelative, ...zone } = z;
+    existing.push(zone);
+    zonesByAnchor.set(anchor, existing);
   }
 
-  const anchorIndices = new Set(adjustedZones.map((z) => z.anchorBlockIndex));
+  // Derive from the map keys, not the raw zones — full-width bands are
+  // re-anchored to block 0 above, and the activation set must match.
+  const anchorIndices = new Set(zonesByAnchor.keys());
 
   let cumulativeY = 0;
   let activeZones: FloatingImageZone[] = [];
@@ -156,7 +193,8 @@ export function measureBlocksWithFloats(
 function extractFloatingZones(
   blocks: FlowBlock[],
   contentWidth: number,
-  measureBlock: MeasureBlockFn
+  measureBlock: MeasureBlockFn,
+  pageGeometry?: FloatPageGeometry
 ): FloatingZoneWithAnchor[] {
   const zones: FloatingZoneWithAnchor[] = [];
 
@@ -176,7 +214,13 @@ function extractFloatingZones(
         );
         break;
       case 'textBox':
-        extractFloatingTextBoxZone(block as TextBoxBlock, blockIndex, contentWidth, zones);
+        extractFloatingTextBoxZone(
+          block as TextBoxBlock,
+          blockIndex,
+          contentWidth,
+          zones,
+          pageGeometry
+        );
         break;
     }
   }
@@ -344,10 +388,11 @@ function extractFloatingTextBoxZone(
   tbBlock: TextBoxBlock,
   blockIndex: number,
   contentWidth: number,
-  out: FloatingZoneWithAnchor[]
+  out: FloatingZoneWithAnchor[],
+  pageGeometry?: FloatPageGeometry
 ): void {
   if (!isFloatingTextBoxBlock(tbBlock)) return;
-  if (isWrapNone(tbBlock.wrapType) || tbBlock.wrapType === 'topAndBottom') return;
+  if (isWrapNone(tbBlock.wrapType)) return;
 
   const tbWidth = tbBlock.width ?? 0;
   const tbHeight = tbBlock.height ?? 0;
@@ -357,6 +402,44 @@ function extractFloatingTextBoxZone(
   const distBottom = tbBlock.distBottom ?? 0;
   const distLeft = tbBlock.distLeft ?? 12;
   const distRight = tbBlock.distRight ?? 12;
+
+  // NOTE: the page-pinned topAndBottom band below is currently text-box only.
+  // A topAndBottom anchored *image* is still laid out as a block image on its
+  // own line at its anchor (see extractImageZonesFromParagraph / renderPage),
+  // so a page-anchored image band is not yet honored — follow-up.
+  //
+  // topAndBottom: reserve a full-width vertical band so body text flows above
+  // and below the box. Page/margin-relative boxes (e.g. a banner pinned to the
+  // page top) need their offset translated into content-area coordinates.
+  if (tbBlock.wrapType === 'topAndBottom') {
+    // Resolve the band's vertical top via the SAME resolver the painter uses,
+    // so the reserved band lines up with where the box is painted regardless of
+    // anchor kind (page / margin / topMargin / bottomMargin, align or posOffset).
+    // fragmentY=0: a topAndBottom band is page/margin-pinned; the paragraph-Y
+    // fallback only applies to genuinely paragraph-relative boxes, which this
+    // pre-pagination pass anchors at their own block (cumulativeY 0 there).
+    const rawTopY = resolveAnchoredObjectVerticalTop(
+      { width: tbWidth, height: tbHeight, position: tbBlock.position },
+      0,
+      pageGeometry
+    );
+    // Signed top may be negative when the box reaches up into the top margin.
+    // The band reserves only the part intruding into content (topY clamped at
+    // 0), but its bottom is measured from the true top so the reserved height
+    // matches how far the box extends below the content edge.
+    const bottomY = rawTopY + tbHeight + distBottom;
+    if (bottomY <= 0) return;
+    out.push({
+      leftMargin: 0,
+      rightMargin: 0,
+      topY: Math.max(0, rawTopY - distTop),
+      bottomY,
+      anchorBlockIndex: blockIndex,
+      isMarginRelative: isPositionMarginRelative(tbBlock.position),
+      fullWidthBlock: true,
+    });
+    return;
+  }
 
   let topY = 0;
   if (tbBlock.position?.vertical?.posOffset !== undefined) {

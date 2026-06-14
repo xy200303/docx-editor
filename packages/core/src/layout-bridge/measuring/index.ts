@@ -48,7 +48,11 @@ export {
   type FloatingLineSegmentZone,
 } from './floatingZones';
 
-export { measureBlocksWithFloats, type MeasureBlockFn } from './measureBlocksPipeline';
+export {
+  measureBlocksWithFloats,
+  type MeasureBlockFn,
+  type FloatPageGeometry,
+} from './measureBlocksPipeline';
 
 // Caching utilities
 export {

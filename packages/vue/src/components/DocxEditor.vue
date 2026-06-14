@@ -31,17 +31,12 @@
         <template #title-bar-right><slot name="title-bar-right" /></template>
       </DocxEditorMenuBar>
 
-      <!-- Toolbar: pill with formatting buttons + editing-mode dropdown
-           on the right end. Mirrors React's <Toolbar> inline layout.
-           TableToolbar is rendered into Toolbar's `table-context`
-           slot so the table-context buttons appear inline inside the same
-           pill (React Toolbar.tsx does this with a conditional
-           `<ToolbarGroup>`). When the cursor leaves a table the slot
-           renders nothing and the pill collapses back to formatting
-           buttons + editing mode only. -->
+      <!-- Toolbar pill: formatting buttons + editing-mode dropdown. TableToolbar
+           renders into the `table-context` slot (inline in the same pill); the
+           slot is empty when the cursor isn't in a table. -->
       <Toolbar
         v-if="showToolbar"
-        :view="editorView"
+        :view="activeFormattingView"
         :get-commands="getCommands"
         :state-tick="stateTick"
         :zoom-percent="zoomPercent"
@@ -67,7 +62,7 @@
       >
         <template #table-context>
           <TableToolbar
-            :view="editorView"
+            :view="activeFormattingView"
             :get-commands="getCommands"
             :state-tick="stateTick"
             :theme="documentTheme"
@@ -84,7 +79,6 @@
 
     <DocxEditorDialogs
       v-model:show-find-replace="showFindReplace"
-      v-model:show-insert-image="showInsertImage"
       v-model:show-hyperlink="showHyperlink"
       v-model:show-insert-symbol="showInsertSymbol"
       v-model:show-image-properties="showImageProperties"
@@ -97,7 +91,6 @@
       :section-properties="currentSectionProps"
       :current-watermark="currentWatermark"
       :scroll-visible-position-into-view="scrollVisiblePositionIntoView"
-      @insert-image="handleInsertImage"
       @insert-symbol="handleInsertSymbol"
       @hyperlink-submit="handleHyperlinkSubmit"
       @hyperlink-remove="handleHyperlinkRemove"
@@ -127,6 +120,11 @@
           :section-props="currentSectionProps"
           :zoom="zoom"
           :editable="!readOnly"
+          :indent-left="rulerIndents.indentLeft"
+          :indent-right="rulerIndents.indentRight"
+          :first-line-indent="rulerIndents.firstLineIndent"
+          :hanging-indent="rulerIndents.hangingIndent"
+          :tab-stops="rulerIndents.tabStops"
           @left-margin-change="handleLeftMarginChange"
           @right-margin-change="handleRightMarginChange"
           @indent-left-change="handleIndentLeftChange"
@@ -172,6 +170,26 @@
             @save="handleHfSave"
             @close="hfEdit = null"
             @remove="handleHfRemove"
+          />
+
+          <!-- HF selection overlay: blue highlight rects for a drag-selected range
+               in the painted header/footer. Coords are viewport-relative (position:
+               fixed), recomputed on every HF transaction and on scroll/resize. -->
+          <div
+            v-for="(rect, i) in hfEdit ? hfSelectionRects : []"
+            :key="`hf-sel-${i}-${rect.top}-${rect.left}`"
+            class="vue-hf-sel-rect"
+            aria-hidden="true"
+            :style="{
+              position: 'fixed',
+              top: `${rect.top}px`,
+              left: `${rect.left}px`,
+              width: `${rect.width}px`,
+              height: `${rect.height}px`,
+              background: 'rgba(66, 133, 244, 0.25)',
+              pointerEvents: 'none',
+              zIndex: 9998,
+            }"
           />
 
           <!-- HF caret overlay: blinking blue caret at the persistent HF PM's selection head. -->
@@ -279,7 +297,7 @@
             @add-comment="handleAddComment"
             @cancel-add-comment="handleCancelAddComment"
             @comment-reply="handleCommentReply"
-            @comment-resolve="resolveComment"
+            @comment-resolve="handleCommentResolve"
             @comment-unresolve="handleCommentUnresolve"
             @comment-delete="handleCommentDelete"
             @accept-change="handleAcceptChange"
@@ -341,6 +359,14 @@
       style="display: none"
       @change="handleDocxFileChange"
     />
+    <!-- Hidden image picker for Insert > Image (direct insert, no dialog). -->
+    <input
+      ref="imageInputRef"
+      type="file"
+      accept="image/*"
+      style="display: none"
+      @change="handleImageFileChange"
+    />
 
     <DocxEditorOverlays
       :read-only="readOnly"
@@ -361,8 +387,13 @@
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import type { EditorView } from 'prosemirror-view';
 import { TextSelection } from 'prosemirror-state';
-import { computeHfCaretRectFromView } from '@eigenpal/docx-editor-core/layout-bridge';
+import {
+  computeHfCaretRectFromView,
+  computeHfSelectionRectsFromView,
+} from '@eigenpal/docx-editor-core/layout-bridge';
 import { getSelectionInfo as getSelectionInfoImpl } from '../utils/refApiQueries';
+import { extractSelectionState } from '@eigenpal/docx-editor-core/prosemirror';
+import { nearestHfHostEl } from '../utils/domQueries';
 import Toolbar from './Toolbar.vue';
 import TableToolbar from './ui/TableToolbar.vue';
 import DecorationLayer from './DecorationLayer.vue';
@@ -393,6 +424,7 @@ import { useWatermarkControls } from '../composables/useWatermarkControls';
 import { useOutlineSidebar } from '../composables/useOutlineSidebar';
 import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts';
 import { useCommentManagement } from '../composables/useCommentManagement';
+import { useHostCallbacks } from '../composables/useHostCallbacks';
 import { useCommentLifecycle } from '../composables/useCommentLifecycle';
 import { useImageActions } from '../composables/useImageActions';
 import { useContextMenus } from '../composables/useContextMenus';
@@ -409,6 +441,8 @@ import { twipsToPixels } from '@eigenpal/docx-editor-core/utils/units';
 import { SIDEBAR_DOCUMENT_SHIFT } from '@eigenpal/docx-editor-core/utils';
 import { useFontLifecycle } from '../composables/useFontLifecycle';
 import { LayoutSelectionGate } from '@eigenpal/docx-editor-core/prosemirror';
+import { extractSelectionContext } from '@eigenpal/docx-editor-core/prosemirror/plugins/selectionTracker';
+import { createCommentIdAllocator } from '@eigenpal/docx-editor-core/prosemirror/commentIdAllocator';
 
 const props = withDefaults(defineProps<DocxEditorProps>(), {
   documentBuffer: null,
@@ -418,6 +452,7 @@ const props = withDefaults(defineProps<DocxEditorProps>(), {
   showRuler: true,
   documentName: '',
   readOnly: false,
+  author: 'User',
   mode: 'editing',
   i18n: undefined,
   theme: null,
@@ -450,6 +485,9 @@ const emit = defineEmits<{
 
 const editorMode = ref<EditorMode>(props.mode);
 const readOnly = computed(() => props.readOnly || editorMode.value === 'viewing');
+// Author for UI-created comments and tracked changes; threaded into the editor
+// (suggestion-mode plugin) and the comment composables. (#720)
+const authorRef = computed(() => props.author);
 
 provideLocale(computed(() => props.i18n));
 const { t } = createTranslator(computed(() => props.i18n));
@@ -465,7 +503,6 @@ const contentChangeSubscribers = new Set<(document: unknown) => void>();
 const selectionChangeSubscribers = new Set<(selection: unknown) => void>();
 const syncCoordinator = new LayoutSelectionGate();
 const showFindReplace = ref(false);
-const showInsertImage = ref(false);
 const showHyperlink = ref(false);
 const showInsertSymbol = ref(false);
 const showImageProperties = ref(false);
@@ -519,19 +556,36 @@ const {
   pagesContainer: pagesRef,
   readOnly,
   externalPlugins: props.externalPlugins, syncCoordinator, editorMode,
+  author: authorRef,
   onChange: (doc) => {
     emit('change', doc);
     emit('update:document', doc);
+    props.onChange?.(doc);
     contentChangeSubscribers.forEach((listener) => listener(doc));
   },
-  onError: (err) => emit('error', err),
+  onError: (err) => {
+    emit('error', err);
+    props.onError?.(err);
+  },
   onSelectionUpdate: () => {
     stateTick.value++;
-    updateSelectionOverlay();
-    const selection = getSelectionInfoImpl(editorView.value);
+    // The overlay repaint is intentionally NOT called here — it's driven via
+    // the `syncCoordinator.onRender` registration below so it paints against
+    // current DOM. Painting synchronously here resolves the caret against the
+    // not-yet-repainted DOM and the caret vanishes until the next click (#736).
+    const view = editorView.value;
+    // The prop mirrors React's `onSelectionChange`, which delivers a
+    // `SelectionState` (formatting/style snapshot). The ref-API subscribers
+    // keep Vue's existing `SelectionInfo` payload — a separate surface.
+    props.onSelectionChange?.(view ? extractSelectionState(view.state) : null);
+    const selection = getSelectionInfoImpl(view);
     selectionChangeSubscribers.forEach((listener) => listener(selection));
   },
 });
+
+// Host-facing comment callbacks + onEditorViewReady wiring (the `onComment*` /
+// `onEditorViewReady` props), threaded into the comment composables below.
+const { commentCallbacks } = useHostCallbacks(props, editorView);
 
 // ─── Document-state derived computed refs ─────────────────────────────────
 // Active section's properties drive the horizontal ruler (margins + indents).
@@ -545,6 +599,22 @@ const currentSectionProps = computed(() => {
   return body.finalSectionProperties ?? body.sections?.[0]?.properties ?? null;
 });
 
+// Active paragraph's indents/tab stops, so the ruler handles track the
+// selection like React's. Read from the same extractSelectionContext the
+// toolbar uses; recomputed on every selection/transaction via stateTick.
+const rulerIndents = computed(() => {
+  void stateTick.value;
+  const view = editorView.value;
+  const pf = view ? extractSelectionContext(view.state).paragraphFormatting : {};
+  return {
+    indentLeft: pf.indentLeft ?? 0,
+    indentRight: pf.indentRight ?? 0,
+    firstLineIndent: pf.indentFirstLine ?? 0,
+    hangingIndent: pf.hangingIndent ?? false,
+    tabStops: pf.tabs ?? null,
+  };
+});
+
 const documentTheme = computed(() => {
   void stateTick.value;
   return getDocument()?.package?.theme ?? props.theme ?? null;
@@ -552,27 +622,53 @@ const documentTheme = computed(() => {
 
 // HF caret overlay rect from the persistent HF view; shared with React via core's `computeHfCaretRectFromView`.
 const hfCaretRect = ref<{ top: number; left: number; height: number } | null>(null);
-useFontLifecycle(() => props.fonts, (err) => emit('error', err));
+// HF drag-selection rects — drawn when the user selects a range inside the
+// painted header/footer. The body selection overlay is gated off in HF mode
+// (`isHfEditing` in useSelectionSync), so without these the selection is set on
+// the HF PM but never highlighted (#691). Shared with React via core's
+// `computeHfSelectionRectsFromView`.
+const hfSelectionRects = ref<Array<{ top: number; left: number; width: number; height: number }>>(
+  []
+);
+
+// Paint the HF caret + drag-selection rects from the live HF view together
+// (mirror of React's `applyHfOverlay`). `computeHfCaretRectFromView` returns
+// null for a non-empty selection and `computeHfSelectionRectsFromView` returns
+// [] for a collapsed one, so the caret and highlight are mutually exclusive.
+function applyHfOverlay(view: EditorView, position: 'header' | 'footer') {
+  hfCaretRect.value = computeHfCaretRectFromView(view, position);
+  hfSelectionRects.value = computeHfSelectionRectsFromView(view, position);
+}
+function clearHfOverlay() {
+  hfCaretRect.value = null;
+  hfSelectionRects.value = [];
+}
+
+useFontLifecycle(() => props.fonts, (err) => {
+  emit('error', err);
+  props.onError?.(err);
+});
 
 // Memoized so the template doesn't walk the headers/footers Maps every tick.
 const activeHfView = computed<EditorView | null>(() =>
   hfEdit.value?.headerFooter ? (getHfPmView(hfEdit.value.headerFooter) ?? null) : null
 );
 
+// Interactive toolbar formatting targets the edited header/footer, else body (#749).
+const activeFormattingView = computed<EditorView | null>(() => activeHfView.value ?? editorView.value);
+
 // Registered in onMounted because `hfEdit` is destructured later in this script setup (TDZ).
 onMounted(() => {
   setHfTransactionListener((_rId, view) => {
-    // Defer a frame so the painter repaints before we measure spans, then
-    // re-measure the painted HF rect so the chrome outline grows with the
-    // header as the user types (targetRect captured at engage stays fixed
-    // otherwise — blue border ends up covering only the original height).
+    // Re-derive toolbar state against the HF selection (incl. selection-only
+    // moves the HF dispatch never reports to stateTick) — parity with React (#749).
+    stateTick.value++;
+    // Defer a frame so the painter repaints, then re-measure the painted HF rect.
     requestAnimationFrame(() => {
       const edit = hfEdit.value;
       if (!edit) return;
-      hfCaretRect.value = computeHfCaretRectFromView(view, edit.position);
-      const hfEl = window.document.querySelector(
-        edit.position === 'header' ? '.layout-page-header' : '.layout-page-footer'
-      ) as HTMLElement | null;
+      applyHfOverlay(view, edit.position);
+      const hfEl = nearestHfHostEl(edit.position);
       const viewport = pagesViewportRef.value;
       if (!hfEl || !viewport) return;
       const el = hfEl.getBoundingClientRect();
@@ -593,7 +689,7 @@ onMounted(() => {
     () => hfEdit.value,
     (e) => {
       if (!e) {
-        hfCaretRect.value = null;
+        clearHfOverlay();
         return;
       }
       // Collapse body PM selection + blur the body view so the user doesn't
@@ -624,7 +720,7 @@ onMounted(() => {
       const hf = hfEdit.value;
       if (!hf?.headerFooter) return;
       const view = getHfPmView(hf.headerFooter);
-      if (view) hfCaretRect.value = computeHfCaretRectFromView(view, hf.position);
+      if (view) applyHfOverlay(view, hf.position);
     });
   }
   window.addEventListener('scroll', onHfScroll, true);
@@ -690,6 +786,11 @@ const bookmarkOptions = computed(() => {
   return options.sort((a, b) => a.name.localeCompare(b.name));
 });
 
+// One comment/revision ID allocator per editor instance (monotonic, no reuse),
+// shared by the comment lifecycle and management composables so comment and
+// tracked-change IDs never collide.
+const commentIdAllocator = createCommentIdAllocator();
+
 // Comment lifecycle: declared before useFileIO so IO can call extractCommentsAndChanges.
 const {
   floatingCommentBtn,
@@ -716,10 +817,15 @@ const {
   pagesRef,
   pagesViewportRef,
   emit,
+  commentIdAllocator,
+  author: authorRef,
+  commentCallbacks,
 });
 
 const {
   docxInputRef,
+  imageInputRef,
+  handleImageFileChange,
   handleDocxFileChange,
   handleDocumentNameChange,
   downloadCurrentDocument,
@@ -735,6 +841,7 @@ const {
   emit,
   documentName: () => props.documentName,
   onDocumentNameChange: props.onDocumentNameChange,
+  getActiveView: () => activeFormattingView.value,
   nextTick,
 });
 
@@ -754,7 +861,7 @@ const {
   handleInsertSymbol,
   applyFormatting,
   setParagraphStyle,
-} = useFormattingActions({ editorView, getDocument });
+} = useFormattingActions({ editorView, activeView: activeFormattingView, getDocument });
 
 const {
   handlePageSetupApply,
@@ -802,6 +909,7 @@ const {
   resolveComment,
   proposeChange,
   handleCommentReply,
+  handleCommentResolve,
   handleCommentUnresolve,
   handleCommentDelete,
   handleAcceptChange, handleRejectChange,
@@ -818,6 +926,9 @@ const {
   contentChangeSubscribers,
   extractCommentsAndChanges,
   emit,
+  commentIdAllocator,
+  author: authorRef,
+  commentCallbacks,
 });
 
 // Composable order (TDZ-sensitive): useImageActions → usePagesPointer → useContextMenus → useSelectionSync → useDocxEditorRefApi.
@@ -825,10 +936,10 @@ const {
   selectedImage,
   imageInteracting,
   imageToolbarContext,
-  handleInsertImage,
   handleToolbarImageWrap,
   handleImageTransform,
 } = useImageActions({ editorView, zoom, stateTick, getCommands });
+
 
 // Table resize handlers — port of React PagedEditor.tsx column/row/right-edge
 // resize. tryStartResize() runs from handlePagesMouseDown; install() wires
@@ -895,9 +1006,9 @@ const { handleMenuAction, handleMenuTableInsert } = useMenuActions({
   editorView,
   getCommands,
   docxInputRef,
+  imageInputRef,
   showPageSetup,
   showWatermark,
-  showInsertImage,
   showHyperlink,
   showInsertSymbol,
   showKeyboardShortcuts,
@@ -972,12 +1083,22 @@ const isHfEditing = computed(() => hfEdit.value !== null);
 const selectionSync = useSelectionSync({
   editorView,
   pagesRef,
+  zoom,
   selectedImage,
   isHfEditing,
   imageInteracting,
 });
 
+// Drive the overlay through the layout gate (mirrors DecorationLayer): the
+// `requestRender` in `dispatchTransaction` runs this immediately for
+// selection-only moves or defers it until `onLayoutComplete` after a doc edit
+// repaints, so the caret always lands on current DOM (#736). The eager call
+// paints the initial caret (the editor's own `requestRender` ran before this).
+const stopSelectionRender = syncCoordinator.onRender(() => updateSelectionOverlay());
+updateSelectionOverlay();
+
 onBeforeUnmount(() => {
+  stopSelectionRender();
   clearOverlay();
 });
 

@@ -77,6 +77,13 @@ export function renderFloatingImagesLayer(
     img.style.width = `${floatImg.width}px`;
     img.style.height = `${floatImg.height}px`;
     img.style.display = 'block';
+    // A floating image is sized explicitly from its OOXML extent and may be
+    // anchored so it bleeds into the page margin (e.g. a logo flush to the
+    // right edge). Opt out of the global `img { max-width: 100% }` reset, which
+    // would otherwise cap the width to the remaining content area and squash
+    // the image against its fixed height.
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
     if (floatImg.alt) img.alt = floatImg.alt;
     if (floatImg.transform) {
       img.style.transform = floatImg.transform;

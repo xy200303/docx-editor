@@ -161,8 +161,16 @@ export function serializeParagraphFormatting(
       parts.push('<w:widowControl/>');
     }
 
-    // Numbering
-    const numPrXml = serializeNumbering(formatting.numPr);
+    // Numbering. Skip numPr that still equals its style-sourced value (see
+    // ParagraphFormatting.numPrFromStyle) — the parser materialized it from
+    // the style and writing it back as direct formatting would flip Word's
+    // level-indent precedence on the saved file. Guards the direct
+    // serialize-a-parsed-Document path; the PM save path already drops it
+    // in fromProseDoc.
+    const styleSourcedNumPr =
+      formatting.numPrFromStyle != null &&
+      JSON.stringify(formatting.numPr) === JSON.stringify(formatting.numPrFromStyle);
+    const numPrXml = styleSourcedNumPr ? '' : serializeNumbering(formatting.numPr);
     if (numPrXml) {
       parts.push(numPrXml);
     }

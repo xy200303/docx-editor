@@ -206,6 +206,48 @@ export function resolveHeaderFooterVisualTop(
   return paragraphY;
 }
 
+/**
+ * Whether a header/footer block participates in the in-flow band height that
+ * pushes the body margin.
+ *
+ * OOXML semantics: Word grows the header/footer band — and shifts body text —
+ * based only on the story's in-flow content. A floating/anchored object
+ * (`wp:anchor` DrawingML or an absolutely-positioned VML shape, e.g. a
+ * full-page letterhead anchored to the page in a header) is removed from the
+ * text flow and positioned on the page; it does NOT grow the band or push the
+ * body. So only inline-flow blocks count here. Anchored image *runs* inside a
+ * paragraph are likewise out of flow, but they don't contribute to the
+ * paragraph's measured line height, so paragraphs need no special handling.
+ *
+ * @public
+ */
+export function contributesToHeaderFooterFlowHeight(block: FlowBlock): boolean {
+  switch (block.kind) {
+    case 'paragraph':
+    case 'table':
+      return true;
+    case 'image':
+      // Inline images count; page/paragraph-anchored floats do not.
+      return !block.anchor?.isAnchored;
+    case 'textBox':
+      // Only genuinely inline text boxes count. 'float' (square/tight/through/
+      // behind/inFront) and 'block' (topAndBottom) are positioned out of the
+      // body's flow and must not push the body margin.
+      return block.displayMode === undefined || block.displayMode === 'inline';
+    default:
+      return false; // sectionBreak / pageBreak / columnBreak
+  }
+}
+
+function measureFlowHeight(measure: Measure | undefined): number {
+  if (!measure) return 0;
+  if (measure.kind === 'paragraph') return measure.totalHeight;
+  if (measure.kind === 'table') return measure.totalHeight;
+  if (measure.kind === 'image') return measure.height;
+  if (measure.kind === 'textBox') return measure.height;
+  return 0;
+}
+
 export function calculateHeaderFooterVisualBounds(
   blocks: FlowBlock[],
   measures: Measure[],
@@ -213,7 +255,12 @@ export function calculateHeaderFooterVisualBounds(
   metrics: HeaderFooterMetrics
 ): { visualTop: number; visualBottom: number } {
   let visualTop = 0;
-  let visualBottom = flowHeight;
+  // Accumulate the real extent from the blocks below. Do NOT seed with the
+  // caller's `flowHeight` arg (it is the float-inclusive `totalHeight`): when a
+  // floating box doesn't advance the cursor, seeding with the stacked total
+  // would keep `visualBottom` artificially tall and the header container/hover
+  // highlight would read taller than the painted content (#705/#729).
+  let visualBottom = 0;
   let cursorY = 0;
 
   for (let i = 0; i < blocks.length; i++) {
@@ -249,7 +296,14 @@ export function calculateHeaderFooterVisualBounds(
       const blockBottomY = cursorY + measure.height;
       visualTop = Math.min(visualTop, cursorY);
       visualBottom = Math.max(visualBottom, blockBottomY);
-      cursorY = blockBottomY;
+      // A floating text box is positioned, not in-flow: it extends the visual
+      // bounds (so the band/container stays tall enough to show it) but does
+      // NOT advance the cursor, mirroring the painter (renderHeaderFooterContent)
+      // and floating tables. Otherwise the header container outgrows its actual
+      // content and the hover highlight reads taller than the header (#705/#729).
+      if (block.displayMode !== 'float') {
+        cursorY = blockBottomY;
+      }
     }
   }
 
@@ -325,15 +379,18 @@ export function convertHeaderFooterPmDocToContent(
 
   const blocksForMeasure = normalizeHeaderFooterMeasureBlocks(blocks);
   const measures = options.measureBlocks(blocksForMeasure, contentWidth);
-  const totalHeight = measures.reduce((h, m) => {
-    if (m.kind === 'paragraph') return h + m.totalHeight;
-    if (m.kind === 'table') return h + m.totalHeight;
-    if (m.kind === 'image') return h + m.height;
-    if (m.kind === 'textBox') return h + m.height;
-    return h;
-  }, 0);
+  let totalHeight = 0;
+  let flowHeight = 0;
+  for (let i = 0; i < blocksForMeasure.length; i++) {
+    const h = measureFlowHeight(measures[i]);
+    totalHeight += h;
+    if (contributesToHeaderFooterFlowHeight(blocksForMeasure[i])) flowHeight += h;
+  }
+  // Use `blocksForMeasure` (the normalized list the `measures` were computed
+  // from), NOT the raw `blocks` — otherwise block[i] and measure[i] can desync
+  // and per-block flags like `displayMode` are read off the wrong block.
   const { visualTop, visualBottom } = calculateHeaderFooterVisualBounds(
-    blocks,
+    blocksForMeasure,
     measures,
     totalHeight,
     metrics
@@ -343,6 +400,7 @@ export function convertHeaderFooterPmDocToContent(
     blocks: blocksForMeasure,
     measures,
     height: totalHeight,
+    flowHeight,
     visualTop,
     visualBottom,
   };
@@ -403,15 +461,33 @@ function getHfDomSnapshot(
   section: 'header' | 'footer',
   doc: globalThis.Document
 ): HfDomSnapshot | null {
-  const cached = hfDomCache[section];
-  if (cached && cached.host.isConnected) return cached;
-  // The same HF doc is painted on every page (shared by `r:id`). Pick the
-  // first painted host for the active section; its spans share PM coords with
-  // every other page's copy, so a single host suffices for caret resolution.
+  // The same HF doc is painted on every page (shared by `r:id`), so any painted
+  // instance carries the right PM coords. But the caret/selection overlay must
+  // render on the instance the user is actually editing — pick the host nearest
+  // the viewport center. Always taking the first (page 1) host drew the overlay
+  // on page 1 even while editing a header/footer on a later page, so the user
+  // saw no caret or highlight where they were typing (#691 footer).
   // Scoping to `.layout-page-${section}` keeps the header and footer from
   // shadowing each other (#671).
-  const host = doc.querySelector<HTMLElement>(`.layout-page-${section}`);
-  if (!host) return null;
+  const hosts = doc.querySelectorAll<HTMLElement>(`.layout-page-${section}`);
+  if (hosts.length === 0) return null;
+  const win = doc.defaultView;
+  const vpCenter = win ? win.innerHeight / 2 : 0;
+  let host = hosts[0];
+  let bestDist = Infinity;
+  for (const h of Array.from(hosts)) {
+    const r = h.getBoundingClientRect();
+    const dist = Math.abs((r.top + r.bottom) / 2 - vpCenter);
+    if (dist < bestDist) {
+      bestDist = dist;
+      host = h;
+    }
+  }
+  // Reuse the cached span lists only when they belong to the same painted host
+  // (and it's still live). The host changes as the user scrolls between pages,
+  // so a section-only cache would keep resolving against the wrong instance.
+  const cached = hfDomCache[section];
+  if (cached && cached.host === host && cached.host.isConnected) return cached;
   const spans = Array.from(host.querySelectorAll<HTMLElement>('span[data-pm-start][data-pm-end]'));
   const ranged = Array.from(host.querySelectorAll<HTMLElement>('[data-pm-start][data-pm-end]'));
   const snapshot = { host, spans, ranged };

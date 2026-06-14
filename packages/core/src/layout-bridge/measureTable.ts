@@ -23,6 +23,7 @@ import type {
 import {
   countTableColumns,
   normalizeTableColumnWidths,
+  resolveCellGrid,
   resolveTableWidthPx,
 } from './tableWidthUtils';
 
@@ -101,39 +102,19 @@ export function measureTableBlock(
     }
   }
 
-  // Track columns occupied by spanning cells from previous rows so vertically
-  // merged cells in later rows don't shift their column-width assignment.
-  const occupiedColumnsPerRow = new Map<number, Set<number>>();
-  for (let rowIdx = 0; rowIdx < tableBlock.rows.length; rowIdx++) {
-    const row = tableBlock.rows[rowIdx];
-    if (!row) continue;
-    let colIdx = 0;
-    const occupied = occupiedColumnsPerRow.get(rowIdx) ?? new Set<number>();
-    while (occupied.has(colIdx)) colIdx++;
-
-    for (const cell of row.cells) {
-      const colSpan = cell.colSpan ?? 1;
-      const rowSpan = cell.rowSpan ?? 1;
-      if (rowSpan > 1) {
-        for (let r = rowIdx + 1; r < rowIdx + rowSpan; r++) {
-          if (!occupiedColumnsPerRow.has(r)) occupiedColumnsPerRow.set(r, new Set());
-          const occSet = occupiedColumnsPerRow.get(r)!;
-          for (let c = 0; c < colSpan; c++) occSet.add(colIdx + c);
-        }
-      }
-      colIdx += colSpan;
-      while (occupied.has(colIdx)) colIdx++;
-    }
+  // Resolve each cell's grid column once (shared with the painter and the
+  // row-break paginator) so column-width assignment honors vertically-merged
+  // cells from earlier rows without re-walking the occupancy grid here.
+  const columnIndexByCell = new Map<string, number>();
+  for (const g of resolveCellGrid(tableBlock)) {
+    columnIndexByCell.set(`${g.rowIndex}-${g.cellIndex}`, g.columnIndex);
   }
 
   const rows = tableBlock.rows.map((row, rowIdx) => {
-    let columnIndex = 0;
-    const occupied = occupiedColumnsPerRow.get(rowIdx) ?? new Set<number>();
-    while (occupied.has(columnIndex)) columnIndex++;
-
     return {
-      cells: row.cells.map((cell) => {
+      cells: row.cells.map((cell, cellIdx) => {
         const colSpan = cell.colSpan ?? 1;
+        const columnIndex = columnIndexByCell.get(`${rowIdx}-${cellIdx}`) ?? 0;
         let cellWidth = 0;
         for (let c = 0; c < colSpan && columnIndex + c < columnWidths.length; c++) {
           cellWidth += columnWidths[columnIndex + c] ?? 0;
@@ -144,8 +125,6 @@ export function measureTableBlock(
               ? cell.width
               : resolveTableWidthPx(cell.widthValue, cell.widthType, targetWidth)) ?? 100;
         }
-        columnIndex += colSpan;
-        while (occupied.has(columnIndex)) columnIndex++;
 
         const padLeft = cell.padding?.left ?? DEFAULT_CELL_PADDING_X;
         const padRight = cell.padding?.right ?? DEFAULT_CELL_PADDING_X;
@@ -163,6 +142,14 @@ export function measureTableBlock(
     };
   });
 
+  // First pass: measure every cell's content height, and size each row from
+  // the cells that START in it. A vertically-merged cell (rowSpan > 1) does
+  // NOT inflate its restart row here — Word keeps the restart row at the
+  // height its own single-row cells need and pushes the merged cell's surplus
+  // content down into the span (handled in the second pass below). Without
+  // this, the restart row balloons to hold the whole merged column and the
+  // continuation rows never get the height needed to flow it across a page.
+  const heightRuleExact: boolean[] = [];
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     const row = rows[rowIdx];
     const sourceRowCells = tableBlock.rows[rowIdx]?.cells;
@@ -171,22 +158,39 @@ export function measureTableBlock(
     for (let cellIdx = 0; cellIdx < row.cells.length; cellIdx++) {
       const cell = row.cells[cellIdx];
       const sourceCell = sourceRowCells?.[cellIdx];
-      // `paragraphMeasure.totalHeight` already includes spacing.before /
-      // spacing.after; just sum the block heights. Adjacent-paragraph
-      // collapse rules don't apply across the cell-content boundary, so this
-      // matches Word's per-cell layout.
+      // Stack the cell's blocks exactly as the painter (renderCellContent) does:
+      // adjacent paragraphs' after/before spacing collapses to the larger of the
+      // two (CSS margin-collapse — the same rule the body paginator uses). The
+      // measured paragraph height already bundles before+after, so strip them
+      // and re-add a single collapsed gap. Summing them additively here would
+      // over-measure the cell (and the row), so the painter's clip/break offsets
+      // would no longer line up with the rendered lines (text cut mid-line at a
+      // page break).
       let contentHeight = 0;
+      let prevAfter = 0;
       for (let blockIdx = 0; blockIdx < cell.blocks.length; blockIdx++) {
         const sourceBlock = sourceCell?.blocks[blockIdx];
         const blockMeasure = cell.blocks[blockIdx];
         if (!sourceBlock || !blockMeasure) continue;
-        contentHeight += measureTableCellBlockVisualHeight(sourceBlock, blockMeasure);
+        const visual = measureTableCellBlockVisualHeight(sourceBlock, blockMeasure);
+        const spacing = sourceBlock.kind === 'paragraph' ? sourceBlock.attrs?.spacing : undefined;
+        const before = spacing?.before ?? 0;
+        const after = spacing?.after ?? 0;
+        contentHeight += Math.max(prevAfter, before) + (visual - before - after);
+        prevAfter = after;
       }
+      // The painter renders the last block's trailing space-after as the cell
+      // content's paddingBottom (renderCellContent), so include it in the height.
+      contentHeight += prevAfter;
       cell.height = contentHeight;
       const padTop = sourceCell?.padding?.top ?? DEFAULT_CELL_PADDING_Y;
       const padBottom = sourceCell?.padding?.bottom ?? DEFAULT_CELL_PADDING_Y;
       cell.height += padTop + padBottom;
-      maxHeight = Math.max(maxHeight, cell.height);
+      // Only single-row cells set the natural row height. Merged cells are
+      // distributed in the second pass.
+      if ((cell.rowSpan ?? 1) <= 1) {
+        maxHeight = Math.max(maxHeight, cell.height);
+      }
       maxVerticalBorderHeight = Math.max(
         maxVerticalBorderHeight,
         getTableCellVerticalBorderHeight(sourceCell)
@@ -196,6 +200,7 @@ export function measureTableBlock(
     const sourceRow = tableBlock.rows[rowIdx];
     const explicitHeight = sourceRow?.height;
     const heightRule = sourceRow?.heightRule;
+    heightRuleExact[rowIdx] = heightRule === 'exact' && !!explicitHeight;
     if (explicitHeight && heightRule === 'exact') {
       row.height = explicitHeight;
     } else if (explicitHeight) {
@@ -203,6 +208,41 @@ export function measureTableBlock(
       row.height = Math.max(maxHeight + maxVerticalBorderHeight, explicitHeight);
     } else {
       row.height = maxHeight + maxVerticalBorderHeight;
+    }
+  }
+
+  // Second pass: distribute vertically-merged cells. A cell with rowSpan = N
+  // must fit inside the combined height of the N rows it spans. When its
+  // content is taller than that combined height, Word grows the region by
+  // pushing the surplus into the LAST spanned row (the merged content then
+  // flows past the other rows' own content). This keeps rows aligned with
+  // Word and lets the layout engine break the tall last row across a page.
+  //
+  // Deficits are measured against a snapshot of the natural row heights so that
+  // overlapping merges (staggered multi-column vMerges sharing rows) each size
+  // against the un-grown rows rather than seeing another merge's added surplus.
+  const naturalRowHeights = rows.map((r) => r.height);
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    const sourceRowCells = tableBlock.rows[rowIdx]?.cells;
+    const measuredCells = rows[rowIdx]?.cells;
+    if (!sourceRowCells || !measuredCells) continue;
+    for (let cellIdx = 0; cellIdx < sourceRowCells.length; cellIdx++) {
+      const rowSpan = sourceRowCells[cellIdx]?.rowSpan ?? 1;
+      if (rowSpan <= 1) continue;
+      const lastRowIdx = Math.min(rowIdx + rowSpan - 1, rows.length - 1);
+      const cellNeeded =
+        (measuredCells[cellIdx]?.height ?? 0) +
+        getTableCellVerticalBorderHeight(sourceRowCells[cellIdx]);
+      let spanned = 0;
+      for (let r = rowIdx; r <= lastRowIdx; r++) spanned += naturalRowHeights[r] ?? 0;
+      const deficit = cellNeeded - spanned;
+      if (deficit <= 0) continue;
+      // Prefer the last non-`exact` row in the span; exact rows are fixed.
+      let target = lastRowIdx;
+      while (target > rowIdx && heightRuleExact[target]) target--;
+      if (!heightRuleExact[target]) {
+        rows[target].height += deficit;
+      }
     }
   }
 

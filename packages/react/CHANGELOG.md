@@ -1,5 +1,106 @@
 # @eigenpal/docx-js-editor
 
+## 1.5.0
+
+### Minor Changes
+
+- 19a25eb: Add `scrollToCommentId`, `scrollToChangeId`, and `highlightRange` methods to `DocxEditorRef` on both the React and Vue adapters, for revealing a location in the editor. Each scrolls the comment, tracked change, or position range into view and selects it so the selection overlay highlights the spot. `scrollToCommentId` and `scrollToChangeId` return `false` when the id no longer resolves, so callers can surface a "location no longer exists" affordance instead of silently doing nothing.
+
+### Patch Changes
+
+- ab38192: Support clickable inline Word checkbox content controls
+- ca275f9: Fix the document outline toggle rendering above the title bar File menu. The outline button now uses the shared `Z_INDEX.outline` layer (40) instead of 50, and the toolbar shell is raised to `Z_INDEX.toolbar` (100) so title-bar dropdowns stay on top. Vue parity: outline toggle at 40, toolbar shell at 100.
+- Updated dependencies [7d02ec1]
+- Updated dependencies [04130ef]
+- Updated dependencies [ab38192]
+- Updated dependencies [5cdfa5c]
+- Updated dependencies [335ad6c]
+- Updated dependencies [c5a4b1e]
+- Updated dependencies [c4fd221]
+- Updated dependencies [ca005c5]
+- Updated dependencies [7d6daeb]
+- Updated dependencies [5cdfa5c]
+- Updated dependencies [44161e5]
+  - @eigenpal/docx-editor-core@1.5.0
+  - @eigenpal/docx-editor-agents@1.5.0
+  - @eigenpal/docx-editor-i18n@1.5.0
+
+## 1.4.0
+
+### Minor Changes
+
+- 1ab8b30: Image resize: drag a corner handle to scale (keeping aspect ratio) or an edge handle to stretch one side (width or height) and deliberately change the aspect ratio. Selection handles are now Word-style white dots. Inserted images keep their aspect ratio — a wide image dropped into a table cell or a narrow column now scales down to fit while staying in proportion, instead of squashing or overflowing the page. Fixes #266.
+
+### Patch Changes
+
+- Updated dependencies [28a521a]
+- Updated dependencies [1ab8b30]
+  - @eigenpal/docx-editor-core@1.4.0
+  - @eigenpal/docx-editor-agents@1.4.0
+  - @eigenpal/docx-editor-i18n@1.4.0
+
+## 1.3.3
+
+### Patch Changes
+
+- bd704e2: Assign every paragraph a stable id when a document is opened, so block ids and `getSelectionInfo().paraId` work before the first edit. Previously a document without `w14:paraId` had null ids until you typed or added a comment. Fixes #738.
+- Updated dependencies [bf748c0]
+- Updated dependencies [15d4f39]
+- Updated dependencies [06fa96b]
+- Updated dependencies [bd704e2]
+- Updated dependencies [30df527]
+  - @eigenpal/docx-editor-core@1.3.3
+  - @eigenpal/docx-editor-agents@1.3.3
+  - @eigenpal/docx-editor-i18n@1.3.3
+
+## 1.3.2
+
+### Patch Changes
+
+- Updated dependencies [3bd7bf7]
+- Updated dependencies [0ded2a1]
+- Updated dependencies [58e3a7e]
+  - @eigenpal/docx-editor-core@1.3.2
+  - @eigenpal/docx-editor-agents@1.3.2
+  - @eigenpal/docx-editor-i18n@1.3.2
+
+## 1.3.1
+
+### Patch Changes
+
+- 3fe9c57: Share the layout pipeline across the React and Vue adapters. The Vue editor now renders multi-column section layouts with correct per-section column widths, coalesces a burst of keystrokes into one layout pass per frame, and no longer scrolls the page when you edit. React behavior is unchanged.
+- d100115: Fix blank render on documents whose header contains a page-anchored letterhead. The body now clears the header/footer based on in-flow content only, so anchored shapes and text boxes (which Word positions on the page) no longer push the body off the page. Fixes #705.
+- 66cf3a8: Share the React/Vue editor orchestration through core so both adapters stay in lockstep. Vue gains three behaviors it was missing: multi-cell selection highlighting, drag-to-edge auto-scroll while selecting, and correct comment/tracked-change ID allocation (IDs are no longer reused after a delete and no longer collide across the comment/revision space). Vue selection rectangles now also cover tab stops and hyperlink text. No public API changes.
+- Updated dependencies [3fe9c57]
+- Updated dependencies [d100115]
+- Updated dependencies [db75f4f]
+- Updated dependencies [66cf3a8]
+  - @eigenpal/docx-editor-core@1.3.1
+  - @eigenpal/docx-editor-agents@1.3.1
+  - @eigenpal/docx-editor-i18n@1.3.1
+
+## 1.3.0
+
+### Patch Changes
+
+- 0d5beed: Fix long content in a table row getting cut off / hidden instead of flowing across pages. A table cell now measures its stacked paragraphs the way it paints them — collapsing adjacent paragraph before/after spacing (like Word) instead of adding it — so the row's height matches what's rendered and page breaks land on whole lines instead of slicing a line in two. Selecting text across a table that spans a page break no longer scatters selection highlights into the gap between pages, and contextual spacing is now suppressed inside table cells. Fixes #570.
+- Updated dependencies [15966fc]
+- Updated dependencies [2003cec]
+- Updated dependencies [5e51a9b]
+- Updated dependencies [cb5f622]
+- Updated dependencies [1be9cf5]
+- Updated dependencies [5fcca3b]
+- Updated dependencies [f73706e]
+- Updated dependencies [0d5beed]
+- Updated dependencies [5b38696]
+- Updated dependencies [15966fc]
+- Updated dependencies [f3d6861]
+- Updated dependencies [0f3eb97]
+- Updated dependencies [eaa6f7f]
+  - @eigenpal/docx-editor-core@1.3.0
+  - @eigenpal/docx-editor-agents@1.3.0
+  - @eigenpal/docx-editor-i18n@1.3.0
+
 ## 1.2.1
 
 ### Patch Changes

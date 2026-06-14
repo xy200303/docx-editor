@@ -1,5 +1,138 @@
 # @eigenpal/docx-editor-vue
 
+## 1.5.0
+
+### Minor Changes
+
+- 19a25eb: Add `scrollToCommentId`, `scrollToChangeId`, and `highlightRange` methods to `DocxEditorRef` on both the React and Vue adapters, for revealing a location in the editor. Each scrolls the comment, tracked change, or position range into view and selects it so the selection overlay highlights the spot. `scrollToCommentId` and `scrollToChangeId` return `false` when the id no longer resolves, so callers can surface a "location no longer exists" affordance instead of silently doing nothing.
+
+### Patch Changes
+
+- ab38192: Support clickable inline Word checkbox content controls
+- 37f79ad: Fix the Vue image selection frame being shifted right (misaligned) on platforms with classic scrollbars. The overlay now accounts for the inline-start scrollbar gutter reserved by `scrollbar-gutter: stable both-edges`.
+- 5cdfa5c: Vue: fix the image selection frame appearing shifted off the image. Selecting an image right after a document loads measured the frame one frame before the page finished re-centering, stranding it to the side; the overlay now re-anchors across the layout settle (and across zoom transitions) so the frame keeps wrapping the image tightly. It also re-anchors when the comments sidebar slides the page sideways while an image stays selected, which previously left the frame stranded to the side until the next scroll.
+
+  Fixes #764
+
+- 5cdfa5c: Vue: insert images directly from Insert > Image like React — the OS file picker opens and the image is placed inline, fitted to the page width, with no intermediate dialog. This also fixes a tall empty gap that appeared below an inserted image wider than the page column. The read-file-fit-and-insert flow now lives in core (`insertImageFromFile`), so React and Vue share one code path and behave identically.
+- d090d08: Fix Vue: replying to a tracked change now threads the reply under that suggestion instead of creating a top-level comment, and the sidebar re-stacks cards when one expands so an expanded card no longer overlaps the next. Fixes #773.
+- Updated dependencies [7d02ec1]
+- Updated dependencies [04130ef]
+- Updated dependencies [ab38192]
+- Updated dependencies [5cdfa5c]
+- Updated dependencies [335ad6c]
+- Updated dependencies [c5a4b1e]
+- Updated dependencies [c4fd221]
+- Updated dependencies [ca005c5]
+- Updated dependencies [7d6daeb]
+- Updated dependencies [5cdfa5c]
+- Updated dependencies [44161e5]
+  - @eigenpal/docx-editor-core@1.5.0
+  - @eigenpal/docx-editor-agents@1.5.0
+  - @eigenpal/docx-editor-i18n@1.5.0
+
+## 1.4.0
+
+### Minor Changes
+
+- 1ab8b30: Image resize: drag a corner handle to scale (keeping aspect ratio) or an edge handle to stretch one side (width or height) and deliberately change the aspect ratio. Selection handles are now Word-style white dots. Inserted images keep their aspect ratio — a wide image dropped into a table cell or a narrow column now scales down to fit while staying in proportion, instead of squashing or overflowing the page. Fixes #266.
+
+### Patch Changes
+
+- 3d36236: Fix Vue `getDocument()` returning paragraphs without their `paraId`s until the first edit. The host Document cache is now synced with the ids assigned at load (#738), so `getDocument()` exposes them immediately. Fixes #746.
+- 92690d6: Fix the Vue formatting toolbar not applying to a header or footer while editing it. Bold, italic, font, size, color, paragraph style, and clear-formatting now target the header/footer being edited instead of the document body. Fixes #749.
+- Updated dependencies [28a521a]
+- Updated dependencies [1ab8b30]
+  - @eigenpal/docx-editor-core@1.4.0
+  - @eigenpal/docx-editor-agents@1.4.0
+  - @eigenpal/docx-editor-i18n@1.4.0
+
+## 1.3.3
+
+### Patch Changes
+
+- bd704e2: Assign every paragraph a stable id when a document is opened, so block ids and `getSelectionInfo().paraId` work before the first edit. Previously a document without `w14:paraId` had null ids until you typed or added a comment. Fixes #738.
+- bf42c14: Fix the Vue editor's text caret disappearing or jumping to the wrong place while typing. The caret/selection overlay now repaints through the layout gate (after the page repaints) instead of synchronously against stale DOM, so the caret stays visible and follows the insertion point. Fixes #736.
+- Updated dependencies [bf748c0]
+- Updated dependencies [15d4f39]
+- Updated dependencies [06fa96b]
+- Updated dependencies [bd704e2]
+- Updated dependencies [30df527]
+  - @eigenpal/docx-editor-core@1.3.3
+  - @eigenpal/docx-editor-agents@1.3.3
+  - @eigenpal/docx-editor-i18n@1.3.3
+
+## 1.3.2
+
+### Patch Changes
+
+- b05e9cf: Add the `author` prop to the Vue editor, matching React. Comments and tracked changes created through the UI now use the supplied author name instead of always being attributed to "User". Fixes #720.
+- 1c254e8: Add React-parity callback props to the Vue editor: `onChange`, `onError`, `onSelectionChange`, `onEditorViewReady`, and the comment lifecycle callbacks `onCommentAdd`, `onCommentResolve`, `onCommentDelete`, `onCommentReply`, and `onCommentsChange`. Hosts can now observe document, selection, and comment changes via props alongside the existing Vue events. Part of #720.
+- 6228132: Vue toolbar tooltips and the right-click text context menu now follow the active i18n locale instead of always rendering English. Shortcut-bearing buttons (bold, italic, underline, insert link, super/subscript, image properties) and every context-menu item (cut, copy, paste, delete, select all, table and image actions) route through `t()`.
+- Updated dependencies [3bd7bf7]
+- Updated dependencies [0ded2a1]
+- Updated dependencies [58e3a7e]
+  - @eigenpal/docx-editor-core@1.3.2
+  - @eigenpal/docx-editor-agents@1.3.2
+  - @eigenpal/docx-editor-i18n@1.3.2
+
+## 1.3.1
+
+### Patch Changes
+
+- 3fe9c57: Share the layout pipeline across the React and Vue adapters. The Vue editor now renders multi-column section layouts with correct per-section column widths, coalesces a burst of keystrokes into one layout pass per frame, and no longer scrolls the page when you edit. React behavior is unchanged.
+- d100115: Fix blank render on documents whose header contains a page-anchored letterhead. The body now clears the header/footer based on in-flow content only, so anchored shapes and text boxes (which Word positions on the page) no longer push the body off the page. Fixes #705.
+- 66cf3a8: Share the React/Vue editor orchestration through core so both adapters stay in lockstep. Vue gains three behaviors it was missing: multi-cell selection highlighting, drag-to-edge auto-scroll while selecting, and correct comment/tracked-change ID allocation (IDs are no longer reused after a delete and no longer collide across the comment/revision space). Vue selection rectangles now also cover tab stops and hyperlink text. No public API changes.
+- Updated dependencies [3fe9c57]
+- Updated dependencies [d100115]
+- Updated dependencies [db75f4f]
+- Updated dependencies [66cf3a8]
+  - @eigenpal/docx-editor-core@1.3.1
+  - @eigenpal/docx-editor-agents@1.3.1
+  - @eigenpal/docx-editor-i18n@1.3.1
+
+## 1.3.0
+
+### Minor Changes
+
+- 0f3eb97: Add the Insert → Watermark dialog to the Vue editor. The Vue adapter could already render and round-trip watermarks from opened documents; now you can also add, edit, or remove text and picture watermarks from the UI, with the change participating in undo/redo.
+
+### Patch Changes
+
+- 928593b: Vue: show the hyperlink popup when clicking a link in a header or footer. The click handler now resolves against the active header/footer editor (matching the body and React behavior) instead of the body, and no longer ignores links whose URL is empty.
+
+  Fixes #692
+
+- 6dc5b50: Vue: fix the image selection frame being offset from the image at zoom levels other than 100%. The overlay lives in the unscaled scroll viewport, so it now positions at post-scale pixels and scales its border/handles with the zoom factor, wrapping the image tightly. It also re-anchors when the zoom transition settles.
+
+  Fixes #695
+
+- 98ae3e5: Vue: fix the text selection highlight and caret drifting away from the text at zoom levels other than 100%. The overlay rects are painted into the scaled pages container, so they are now divided by the zoom factor to land on the selected text.
+
+  Fixes #693
+
+- 9c8068f: Fix the Vue "Add comment" card overlapping existing comment and tracked-change cards in the sidebar. The add-comment input now flows through the same collision-avoidance pass as every other card, so it claims its slot and neighbouring cards stack below it. Fixes #669
+- cab7424: Fix the Vue header/footer "Remove" button doing nothing. Removing a header or footer now drops the part from the package and strips its section references, so it stops rendering on the page (matching React). Fixes #686
+- f3d6861: Fix text selection not showing in Vue headers and footers. Selecting text while editing a header or footer now paints the highlight (the body overlay was suppressed in HF mode but the HF rects were never drawn), and double/triple-click word and paragraph selection resolves against the header/footer text instead of a body run at the same position. On multi-page documents, the caret and selection now render on the header/footer instance being edited rather than always on page one's copy. Fixes #691
+- 06aea12: Vue: keep the image selection frame on the image when it moves to another page or is resized, instead of stranding it at the old position.
+- 127985a: Fix the Vue horizontal ruler indent handles not tracking the active paragraph. The ruler now reads the selection's left/right/first-line/hanging indents and tab stops (like React) and moves the handles to match. Also stop showing an extra first-line-indent marker at the left margin. Fixes #685
+- Updated dependencies [15966fc]
+- Updated dependencies [2003cec]
+- Updated dependencies [5e51a9b]
+- Updated dependencies [cb5f622]
+- Updated dependencies [1be9cf5]
+- Updated dependencies [5fcca3b]
+- Updated dependencies [f73706e]
+- Updated dependencies [0d5beed]
+- Updated dependencies [5b38696]
+- Updated dependencies [15966fc]
+- Updated dependencies [f3d6861]
+- Updated dependencies [0f3eb97]
+- Updated dependencies [eaa6f7f]
+  - @eigenpal/docx-editor-core@1.3.0
+  - @eigenpal/docx-editor-agents@1.3.0
+  - @eigenpal/docx-editor-i18n@1.3.0
+
 ## 1.2.1
 
 ### Patch Changes

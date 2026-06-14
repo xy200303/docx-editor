@@ -1,29 +1,31 @@
 /**
  * DOM-based selection / caret helpers for PagedEditor.
  *
- * Layout painter renders pages as static DOM with `data-pm-start` /
- * `data-pm-end` attributes. These helpers walk that DOM to translate PM
- * positions back to pixel-space caret + selection geometry, and to apply
- * the visual cell-selection highlight class onto rendered table cells.
+ * The core DOM walks (`getCaretPositionFromDom` / `getSelectionRectsFromDom`)
+ * live in `@eigenpal/docx-editor-core/layout-bridge` and are shared with the
+ * Vue adapter. These thin React wrappers resolve the selection-overlay rect,
+ * call the core walk, then divide by `zoom` so the result lands in the
+ * React overlay's own (unscaled-but-CSS-scaled) coordinate space. React's
+ * overlay sits OUTSIDE the scroll container, so — unlike Vue — it does not add
+ * scrollTop/scrollLeft (intentional divergence, #670).
+ *
+ * `applyCellSelectionHighlight` is re-exported from core (shared with Vue).
  */
 
-import type { EditorState } from 'prosemirror-state';
 import {
-  findBodyEmptyRuns,
-  findBodyPmSpans,
+  getCaretPositionFromDom,
+  getSelectionRectsFromDom,
   type CaretPosition,
   type SelectionRect,
 } from '@eigenpal/docx-editor-core/layout-bridge';
 
+export { applyCellSelectionHighlight } from '@eigenpal/docx-editor-core/layout-bridge';
+
 /**
- * Resolve a caret position by measuring the rendered DOM rather than
- * recomputing it from layout geometry. Walks `[data-pm-start/-pm-end]`
- * spans inside `pagesContainer` to find the run containing `pmPos`, then
- * creates a zero-length DOM Range at the character offset to read the
- * exact pixel position.
- *
- * Returns `null` when the position falls outside any painted run (caller
- * falls back to layout-based caret math).
+ * Resolve a caret position by measuring the rendered DOM. Delegates the walk
+ * to core, then converts overlay-space pixels into the React overlay's scaled
+ * coordinate space (divide by zoom). Returns `null` when the overlay isn't
+ * mounted or the position falls outside any painted run.
  */
 export function getCaretFromDom(
   pagesContainer: HTMLElement,
@@ -32,92 +34,22 @@ export function getCaretFromDom(
 ): CaretPosition | null {
   const overlay = pagesContainer.parentElement?.querySelector('[data-testid="selection-overlay"]');
   if (!overlay) return null;
-
   const overlayRect = overlay.getBoundingClientRect();
-  const spans = findBodyPmSpans(pagesContainer);
-
-  for (const spanEl of spans) {
-    const pmStart = Number(spanEl.dataset.pmStart);
-    const pmEnd = Number(spanEl.dataset.pmEnd);
-
-    // Tab spans use exclusive end — pos at pmEnd belongs to the next run.
-    if (spanEl.classList.contains('layout-run-tab')) {
-      if (pmPos >= pmStart && pmPos < pmEnd) {
-        const spanRect = spanEl.getBoundingClientRect();
-        const pageEl = spanEl.closest('.layout-page');
-        const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-        const lineEl = spanEl.closest('.layout-line');
-        const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
-        return {
-          x: (spanRect.left - overlayRect.left) / currentZoom,
-          y: (spanRect.top - overlayRect.top) / currentZoom,
-          height: lineHeight,
-          pageIndex,
-        };
-      }
-      continue;
-    }
-
-    if (pmPos >= pmStart && pmPos <= pmEnd && spanEl.firstChild?.nodeType === Node.TEXT_NODE) {
-      const textNode = spanEl.firstChild as Text;
-      const charIndex = Math.min(pmPos - pmStart, textNode.length);
-
-      const ownerDoc = spanEl.ownerDocument;
-      if (!ownerDoc) continue;
-      const range = ownerDoc.createRange();
-      range.setStart(textNode, charIndex);
-      range.setEnd(textNode, charIndex);
-
-      const rangeRect = range.getBoundingClientRect();
-      const pageEl = spanEl.closest('.layout-page');
-      const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-      const lineEl = spanEl.closest('.layout-line');
-      const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
-
-      return {
-        x: (rangeRect.left - overlayRect.left) / currentZoom,
-        y: (rangeRect.top - overlayRect.top) / currentZoom,
-        height: lineHeight,
-        pageIndex,
-      };
-    }
-  }
-
-  // Fallback: empty paragraphs have empty runs but no span text node.
-  const emptyRuns = findBodyEmptyRuns(pagesContainer);
-  for (const emptyRun of emptyRuns) {
-    const paragraph = emptyRun.closest('.layout-paragraph') as HTMLElement | null;
-    if (!paragraph) continue;
-
-    const pmStart = Number(paragraph.dataset.pmStart);
-    const pmEnd = Number(paragraph.dataset.pmEnd);
-
-    if (pmPos >= pmStart && pmPos <= pmEnd) {
-      const runRect = emptyRun.getBoundingClientRect();
-      const pageEl = paragraph.closest('.layout-page');
-      const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-      const lineEl = emptyRun.closest('.layout-line');
-      const lineHeight = lineEl ? (lineEl as HTMLElement).offsetHeight : 16;
-
-      return {
-        x: (runRect.left - overlayRect.left) / currentZoom,
-        y: (runRect.top - overlayRect.top) / currentZoom,
-        height: lineHeight,
-        pageIndex,
-      };
-    }
-  }
-
-  return null;
+  const caret = getCaretPositionFromDom(pagesContainer, pmPos, overlayRect);
+  if (!caret) return null;
+  return {
+    x: caret.x / currentZoom,
+    y: caret.y / currentZoom,
+    height: caret.height,
+    pageIndex: caret.pageIndex,
+  };
 }
 
 /**
- * Build SelectionRect[] for a range [from, to) by walking the painted PM
- * spans and using DOM Range.getClientRects() per overlapping span. Handles
- * line wraps (multiple rects per span) and hyperlink-wrapped text nodes.
- *
- * Returns `[]` when no painted spans overlap the range (caller falls back
- * to layout-based selectionToRects).
+ * Build SelectionRect[] for a range [from, to) via the core DOM walk, then
+ * convert overlay-space pixels into the React overlay's scaled coordinate
+ * space. Returns `[]` when no painted spans overlap the range (caller falls
+ * back to layout-based selectionToRects).
  */
 export function computeSelectionRectsFromDom(
   pagesContainer: HTMLElement,
@@ -126,128 +58,12 @@ export function computeSelectionRectsFromDom(
   to: number,
   zoom: number
 ): SelectionRect[] {
-  const domRects: SelectionRect[] = [];
-  const spans = findBodyPmSpans(pagesContainer);
-
-  for (const spanEl of spans) {
-    const pmStart = Number(spanEl.dataset.pmStart);
-    const pmEnd = Number(spanEl.dataset.pmEnd);
-
-    if (pmEnd <= from || pmStart >= to) continue;
-
-    if (spanEl.classList.contains('layout-run-tab')) {
-      const spanRect = spanEl.getBoundingClientRect();
-      const pageEl = spanEl.closest('.layout-page');
-      const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-      domRects.push({
-        x: (spanRect.left - overlayRect.left) / zoom,
-        y: (spanRect.top - overlayRect.top) / zoom,
-        width: spanRect.width / zoom,
-        height: spanRect.height / zoom,
-        pageIndex,
-      });
-      continue;
-    }
-
-    // Text node may be a direct child, or nested inside an <a> for hyperlinks.
-    let textNode: Text | null = null;
-    if (spanEl.firstChild?.nodeType === Node.TEXT_NODE) {
-      textNode = spanEl.firstChild as Text;
-    } else if (
-      spanEl.firstChild?.nodeType === Node.ELEMENT_NODE &&
-      (spanEl.firstChild as HTMLElement).tagName === 'A' &&
-      spanEl.firstChild.firstChild?.nodeType === Node.TEXT_NODE
-    ) {
-      textNode = spanEl.firstChild.firstChild as Text;
-    }
-    if (!textNode) continue;
-    const ownerDoc = spanEl.ownerDocument;
-    if (!ownerDoc) continue;
-
-    const startChar = Math.max(0, from - pmStart);
-    const endChar = Math.min(textNode.length, to - pmStart);
-    if (startChar >= endChar) continue;
-
-    const range = ownerDoc.createRange();
-    range.setStart(textNode, startChar);
-    range.setEnd(textNode, endChar);
-
-    const clientRects = range.getClientRects();
-    for (const rect of Array.from(clientRects)) {
-      const pageEl = spanEl.closest('.layout-page');
-      const pageIndex = pageEl ? Number((pageEl as HTMLElement).dataset.pageNumber) - 1 : 0;
-      domRects.push({
-        x: (rect.left - overlayRect.left) / zoom,
-        y: (rect.top - overlayRect.top) / zoom,
-        width: rect.width / zoom,
-        height: rect.height / zoom,
-        pageIndex,
-      });
-    }
-  }
-
-  return domRects;
-}
-
-/**
- * Apply the `.layout-table-cell-selected` class to painted layout cells
- * matching a CellSelection in the PM state. Clears the class everywhere
- * first so toggling off (or moving to a TextSelection) erases prior
- * highlights.
- *
- * Duck-types CellSelection via `$anchorCell` / `forEachCell` rather than
- * `instanceof` to dodge bundling issues across `prosemirror-tables`
- * copies (the same trick used inline in updateSelectionOverlay).
- */
-export function applyCellSelectionHighlight(
-  pagesContainer: HTMLElement,
-  state: EditorState,
-  options: { scope?: 'body' | 'header' | 'footer' } = {}
-): void {
-  const scope = options.scope ?? 'body';
-  // The selector that limits which cells this call can highlight. Header and
-  // footer cells live in `.layout-page-header` / `.layout-page-footer`
-  // (separate PM docs), body cells in `.layout-page-content`. PM positions
-  // overlap across all three docs, so we MUST scope the walk to the matching
-  // tree — a footer CellSelection at pos 100 would otherwise also light up a
-  // header cell at `data-pm-start="100"` (#671), and a body selection would
-  // bleed into both.
-  const scopeClass = scope === 'body' ? 'layout-page-content' : `layout-page-${scope}`;
-  const scopeSelector = `.${scopeClass} .layout-table-cell`;
-
-  // Only clear highlights inside this scope so the body call doesn't wipe
-  // HF highlights (and vice versa), and the header call doesn't wipe the
-  // footer's.
-  const prevSelected = pagesContainer.querySelectorAll(
-    `.${scopeClass} .layout-table-cell-selected`
-  );
-  for (const el of Array.from(prevSelected)) {
-    el.classList.remove('layout-table-cell-selected');
-  }
-
-  const sel = state.selection as unknown as {
-    $anchorCell?: unknown;
-    forEachCell?: (cb: (node: { nodeSize: number }, pos: number) => void) => void;
-  };
-  const isCellSel = '$anchorCell' in sel && typeof sel.forEachCell === 'function';
-  if (!isCellSel || !sel.forEachCell) return;
-
-  const selectedRanges: Array<[number, number]> = [];
-  sel.forEachCell((node, pos) => {
-    selectedRanges.push([pos, pos + node.nodeSize]);
-  });
-
-  const allCells = pagesContainer.querySelectorAll(scopeSelector);
-  for (const cellEl of Array.from(allCells)) {
-    const htmlEl = cellEl as HTMLElement;
-    const pmStartAttr = htmlEl.dataset.pmStart;
-    if (pmStartAttr === undefined) continue;
-    const pmPos = Number(pmStartAttr);
-    for (const [start, end] of selectedRanges) {
-      if (pmPos >= start && pmPos < end) {
-        htmlEl.classList.add('layout-table-cell-selected');
-        break;
-      }
-    }
-  }
+  const rects = getSelectionRectsFromDom(pagesContainer, from, to, overlayRect);
+  return rects.map((rect) => ({
+    x: rect.x / zoom,
+    y: rect.y / zoom,
+    width: rect.width / zoom,
+    height: rect.height / zoom,
+    pageIndex: rect.pageIndex,
+  }));
 }

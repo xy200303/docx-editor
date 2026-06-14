@@ -10,6 +10,7 @@
  */
 
 import type { ResolvedParagraphStyle } from './styleResolver';
+import { computeListRendering, type NumberingMap } from '../../docx/numberingParser';
 
 /**
  * The paragraph attrs a style definition controls. Applying a style resets
@@ -43,4 +44,67 @@ export function paragraphAttrsFromResolvedStyle(
     // and the formatting typed text inherits (see EmptyParagraphFormatExtension).
     defaultTextFormatting: hasRunFormatting ? runFormatting : null,
   };
+}
+
+/**
+ * The list attrs a style's `w:pPr/w:numPr` controls (numbering reference plus
+ * the baked marker-rendering attrs that `toProseDoc` normally derives from
+ * `listRendering` at load time). Returns null when the style defines no
+ * numbering — applying such a style leaves any existing list attrs alone, so
+ * directly-applied (toolbar) lists survive a style switch the way they do in
+ * Word, where numbering is not cleared by applying an unnumbered style.
+ *
+ * When the style does define numbering, the full attr group is reset so a
+ * previous list's marker attrs never leak into the new one. Without the
+ * numbering definitions the marker template can't be resolved and the painter
+ * falls back to a plain decimal marker.
+ */
+export function listAttrsFromResolvedStyle(
+  resolved: ResolvedParagraphStyle,
+  numbering: NumberingMap | null | undefined
+): Record<string, unknown> | null {
+  const numPr = resolved.paragraphFormatting?.numPr;
+  if (!numPr || numPr.numId === undefined || numPr.numId === 0) return null;
+
+  const rendering = numbering ? computeListRendering(numPr, numbering) : null;
+  const level = numbering?.getLevel(numPr.numId, numPr.ilvl ?? 0);
+
+  const attrs: Record<string, unknown> = {
+    numPr: { numId: numPr.numId, ilvl: numPr.ilvl ?? 0 },
+    // The numbering belongs to the style — mark it so a save doesn't
+    // materialize a direct <w:numPr> (see ParagraphAttrs.numPrFromStyle).
+    numPrFromStyle: { numId: numPr.numId, ilvl: numPr.ilvl ?? 0 },
+    listNumFmt: rendering?.numFmt ?? null,
+    listIsBullet: rendering?.isBullet ?? null,
+    listMarker: rendering?.marker ?? null,
+    listMarkerHidden: rendering?.markerHidden ?? null,
+    listMarkerFontFamily: rendering?.markerFontFamily ?? null,
+    listMarkerFontSize: rendering?.markerFontSize ?? null,
+    listMarkerSuffix: rendering?.markerSuffix ?? null,
+    listLevelNumFmts: rendering?.levelNumFmts ?? null,
+    listAbstractNumId: rendering?.abstractNumId ?? null,
+    listStartOverride: rendering?.startOverride ?? null,
+  };
+
+  // The numbering level's own indents apply beneath the style's (ECMA-376
+  // numbering pPr sits below the style in the cascade) — use them only where
+  // the style doesn't specify its own indentation.
+  const ppr = resolved.paragraphFormatting;
+  if (level?.pPr) {
+    if (ppr?.indentLeft === undefined && level.pPr.indentLeft !== undefined) {
+      attrs.indentLeft = level.pPr.indentLeft;
+    }
+    const styleHasFirstLine =
+      ppr?.indentFirstLine !== undefined || ppr?.hangingIndent !== undefined;
+    if (!styleHasFirstLine) {
+      if (level.pPr.indentFirstLine !== undefined) {
+        attrs.indentFirstLine = level.pPr.indentFirstLine;
+      }
+      if (level.pPr.hangingIndent !== undefined) {
+        attrs.hangingIndent = level.pPr.hangingIndent;
+      }
+    }
+  }
+
+  return attrs;
 }

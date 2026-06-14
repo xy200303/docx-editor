@@ -51,7 +51,11 @@ import {
 } from '../layout-bridge/measuring';
 import { resolveFontFamily } from '../utils/fontResolver';
 import { pointsToPixels } from '../utils/units';
-import { floatingTextBoxWrapsText, isFloatingTextBoxBlock } from '../layout-engine/textBoxFlow';
+import {
+  floatingTextBoxReservesBand,
+  floatingTextBoxWrapsText,
+  isFloatingTextBoxBlock,
+} from '../layout-engine/textBoxFlow';
 import {
   floatingImageIsBehindDoc,
   floatingImageWrapsText,
@@ -87,7 +91,10 @@ export {
   type FloatingImagesLayerOptions,
 } from './floatingImageLayer';
 export type { HeaderFooterContent, HeaderFooterLayoutInfo } from './renderPage/headerFooter';
-export { resolveHeaderFooterFloatingTablePosition } from './renderPage/headerFooter';
+export {
+  resolveHeaderFooterFloatingTablePosition,
+  resolveHeaderFooterFloatLeft,
+} from './renderPage/headerFooter';
 export type { FootnoteRenderItem } from './renderPage/footnotes';
 export {
   renderPages,
@@ -369,11 +376,18 @@ function applyFragmentStyles(
 ): void {
   element.style.position = 'absolute';
   element.style.left = `${fragment.x - margins.left}px`;
-  element.style.top = `${fragment.y - margins.top}px`;
+  // Tables draw 1px cell borders on an internal whole-pixel row grid; if the
+  // table's own top is fractional those borders fall between device pixels and
+  // render unevenly soft/thick. Snap a table's top (and height) to whole pixels
+  // so its border grid aligns with the page (which sits on the pixel grid).
+  const top = fragment.y - margins.top;
+  element.style.top = `${fragment.kind === 'table' ? Math.round(top) : top}px`;
   element.style.width = `${fragment.width}px`;
 
-  // Height handling varies by fragment type
-  if ('height' in fragment) {
+  // Height handling varies by fragment type. Tables set their own height in
+  // renderTableFragment (from the rounded row stack, so the bottom border isn't
+  // clipped) — don't override it here.
+  if ('height' in fragment && fragment.kind !== 'table') {
     element.style.height = `${fragment.height}px`;
   }
 }
@@ -578,7 +592,11 @@ export function renderPage(
       fragment.x = page.margins.left + resolved.x;
       fragment.y = page.margins.top + resolved.y;
 
-      if (!floatingTextBoxWrapsText(textBoxBlock)) continue;
+      // topAndBottom reserves a full-width band (text flows above/below);
+      // side-wrap types reserve a side exclusion. Both push a rect — the band
+      // is distinguished by `wrapType` in rectsToFloatingZones.
+      const reservesBand = floatingTextBoxReservesBand(textBoxBlock);
+      if (!reservesBand && !floatingTextBoxWrapsText(textBoxBlock)) continue;
 
       floatingRects.push({
         side: resolved.side,

@@ -114,6 +114,9 @@ export function distributeColumns(): (state: EditorState, dispatch?: (tr: Transa
 export const documentStylesKey: PluginKey<StyleResolver | null>;
 
 // @public
+export function ensureParaIdsInState(state: EditorState): EditorState;
+
+// @public
 export function extractSelectionContext(state: EditorState): SelectionContext;
 
 // @public
@@ -380,6 +383,10 @@ export interface ParagraphAttrs {
         numId?: number;
         ilvl?: number;
     };
+    numPrFromStyle?: {
+        numId?: number;
+        ilvl?: number;
+    };
     _originalFormatting?: ParagraphFormatting;
     // (undocumented)
     outlineLevel?: number;
@@ -547,6 +554,11 @@ export function setCellVerticalAlign(align: 'top' | 'center' | 'bottom'): (state
 
 // @public
 export function setContentControlContentTr(state: EditorState, filter: ContentControlFilter, text: string, options?: {
+    force?: boolean;
+}): Transaction;
+
+// @public
+export function setContentControlValueAtPosTr(state: EditorState, pos: number, value: ContentControlValue, options?: {
     force?: boolean;
 }): Transaction;
 

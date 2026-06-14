@@ -15,7 +15,7 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, type Ref, type ShallowRef 
 import type { EditorView } from 'prosemirror-view';
 import { TextSelection, NodeSelection } from 'prosemirror-state';
 import type { HeaderFooter, BlockContent } from '@eigenpal/docx-editor-core/types/content';
-import type { Document } from '@eigenpal/docx-editor-core/types/document';
+import type { Document, SectionProperties } from '@eigenpal/docx-editor-core/types/document';
 import { findImageElement } from '@eigenpal/docx-editor-core/layout-painter';
 import {
   detectTableInsertHover,
@@ -30,6 +30,11 @@ import {
 import type { ImageSelectionInfo } from '../components/imageSelectionTypes';
 import type { Layout } from '@eigenpal/docx-editor-core/layout-engine';
 import type { HyperlinkPopupData } from '../components/ui/hyperlinkPopupTypes';
+import { useDragAutoScroll } from './useDragAutoScroll';
+import {
+  createCellDragTracker,
+  findCellPosFromPmPos,
+} from '@eigenpal/docx-editor-core/prosemirror/cellDragSelection';
 
 type TableResizeApi = {
   tryStartResize: (e: MouseEvent, view: EditorView) => boolean;
@@ -140,6 +145,20 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
   // ─── Drag-to-select ─────────────────────────────────────────────────────
   let isDragging = false;
   let dragAnchor: number | null = null;
+  // Promote a drag that crosses table-cell boundaries into a CellSelection
+  // (shared with React via core), so multi-cell ops are reachable by dragging.
+  const cellDrag = createCellDragTracker();
+
+  // Auto-scroll when a drag-select reaches the top/bottom edge of the scroll
+  // container, extending the selection as it scrolls (parity with React).
+  const dragAutoScroll = useDragAutoScroll({
+    pagesContainer: opts.pagesRef,
+    onScrollExtendSelection: (clientX, clientY) => {
+      if (!isDragging || dragAnchor === null) return;
+      const pos = resolvePos(clientX, clientY);
+      if (pos !== null && pos !== dragAnchor) setPmSelection(dragAnchor, pos);
+    },
+  });
 
   // ─── Page-indicator overlay ─────────────────────────────────────────────
   const scrollPageInfo = ref<ScrollPageInfo>({ currentPage: 1, totalPages: 1, visible: false });
@@ -184,11 +203,14 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
   }
 
   function selectWord(pos: number) {
-    selectWordImpl(opts.pagesRef.value, pos, setPmSelection);
+    // Scope the span lookup to the active HF host when editing a header/footer,
+    // so word bounds resolve against the HF text and not a coincidental body
+    // span at the same PM position (#691).
+    selectWordImpl(opts.pagesRef.value, pos, setPmSelection, hfEdit.value?.position);
   }
 
   function selectParagraph(pos: number) {
-    selectParagraphImpl(opts.pagesRef.value, pos, setPmSelection);
+    selectParagraphImpl(opts.pagesRef.value, pos, setPmSelection, hfEdit.value?.position);
   }
 
   function navigateToBookmark(bookmarkName: string) {
@@ -298,13 +320,17 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
     if (!anchor) return;
     event.preventDefault();
     const href = anchor.getAttribute('href') || '';
-    if (!href) return;
     if (href.startsWith('#')) {
       const bookmarkName = href.slice(1);
       if (bookmarkName) navigateToBookmark(bookmarkName);
       return;
     }
-    const view = opts.editorView.value;
+    // Route through the active view (the header/footer PM when editing one),
+    // not the body PM. A link in a painted header/footer resolves against the
+    // HF doc, so checking the body's selection here suppressed the popup for
+    // HF links. Mirrors React's `activeSurface()`. Empty hrefs still surface
+    // the popup (so the user can add/edit a URL), matching React.
+    const view = activeView();
     const hasRangeSelection = view && view.state.selection.from !== view.state.selection.to;
     if (hasRangeSelection) return;
     // Compute popup position relative to the pages viewport so the popup
@@ -470,16 +496,60 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
   function handleHfRemove() {
     const doc = opts.getDocument();
     const edit = hfEdit.value;
-    if (!doc?.package || !edit || !edit.rId) return;
-    const map = edit.position === 'header' ? doc.package.headers : doc.package.footers;
-    const existing = map?.get(edit.rId);
-    if (existing) {
-      existing.content = [];
+    if (!doc?.package || !edit || !edit.rId) {
+      hfEdit.value = null;
+      return;
     }
+    // Actually remove the header/footer (mirror React's
+    // useHeaderFooterEditing.handleRemoveHeaderFooter): drop the part from
+    // the headers/footers map AND strip every section reference that points
+    // at it. Clearing `content` alone (the old behavior) left an empty
+    // header/footer still referenced by the section, so it kept rendering.
+    const mapKey = edit.position === 'header' ? 'headers' : 'footers';
+    const refKey = edit.position === 'header' ? 'headerReferences' : 'footerReferences';
+    const rId = edit.rId;
+
+    const newMap = new Map(doc.package[mapKey] ?? []);
+    newMap.delete(rId);
+
+    // Strip the reference everywhere a section can carry it: each
+    // sections[].properties, finalSectionProperties, and any mid-body
+    // section break (a paragraph's pPr/sectPr in body.content). The painter
+    // and serializer read from these, so the ref must be gone from all of
+    // them or the header/footer keeps rendering or re-serializes.
+    const stripRefs = (sp: SectionProperties): SectionProperties => ({
+      ...sp,
+      [refKey]: (sp[refKey] ?? []).filter((r) => r.rId !== rId),
+    });
+    const stripBlock = <T extends BlockContent>(block: T): T =>
+      'sectionProperties' in block && block.sectionProperties
+        ? { ...block, sectionProperties: stripRefs(block.sectionProperties) }
+        : block;
+
+    const body = doc.package.document;
+    const newDoc: Document = {
+      ...doc,
+      package: {
+        ...doc.package,
+        [mapKey]: newMap,
+        document: body
+          ? {
+              ...body,
+              content: body.content.map(stripBlock),
+              sections: body.sections?.map((s) => ({ ...s, properties: stripRefs(s.properties) })),
+              finalSectionProperties: body.finalSectionProperties
+                ? stripRefs(body.finalSectionProperties)
+                : body.finalSectionProperties,
+            }
+          : body,
+      },
+    };
+
     hfEdit.value = null;
+    opts.setDocument?.(newDoc);
     opts.syncHfPMs?.();
     opts.reLayout();
-    opts.emit('change', doc);
+    opts.emit('change', newDoc);
   }
 
   function handlePagesMouseDown(event: MouseEvent) {
@@ -575,6 +645,9 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
       }
       dragAnchor = pos;
       isDragging = true;
+      // Record the cell under the press so a drag across cells promotes to a
+      // CellSelection (null when the press isn't inside a table).
+      cellDrag.begin(findCellPosFromPmPos(view, pos));
     }
 
     view.focus();
@@ -583,13 +656,26 @@ export function usePagesPointer(opts: UsePagesPointerOptions): UsePagesPointerRe
   function handleMouseMove(event: MouseEvent) {
     if (!isDragging || dragAnchor === null) return;
     const pos = resolvePos(event.clientX, event.clientY);
-    if (pos !== null && pos !== dragAnchor) {
-      setPmSelection(dragAnchor, pos);
+    if (pos !== null) {
+      const view = activeView();
+      // A drag that crosses cell boundaries becomes a CellSelection; when it
+      // does, skip the text-selection update for this move.
+      if (view && cellDrag.update(view, pos, event.clientX)) {
+        dragAutoScroll.updateMousePosition(event.clientX, event.clientY);
+        return;
+      }
+      if (pos !== dragAnchor) {
+        setPmSelection(dragAnchor, pos);
+      }
     }
+    // Drive edge auto-scroll while dragging.
+    dragAutoScroll.updateMousePosition(event.clientX, event.clientY);
   }
 
   function handleMouseUp() {
     isDragging = false;
+    cellDrag.end();
+    dragAutoScroll.stopAutoScroll();
   }
 
   function handleViewportScroll() {

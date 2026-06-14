@@ -55,6 +55,27 @@ export function footnoteReservedHeightsEqual(
   return true;
 }
 
+function footnoteReservedHeightsCover(
+  reserved: Map<number, number>,
+  required: Map<number, number>
+): boolean {
+  for (const [pageNumber, height] of required) {
+    if ((reserved.get(pageNumber) ?? 0) < height) return false;
+  }
+  return true;
+}
+
+function mergeFootnoteReservedHeights(
+  a: Map<number, number>,
+  b: Map<number, number>
+): Map<number, number> {
+  const merged = new Map(a);
+  for (const [pageNumber, height] of b) {
+    merged.set(pageNumber, Math.max(merged.get(pageNumber) ?? 0, height));
+  }
+  return merged;
+}
+
 /**
  * Default footnote font size in points. Word's built-in "Footnote Text"
  * style sets 8pt; we apply this only when the footnote's runs don't
@@ -440,14 +461,34 @@ export function stabilizeFootnoteLayout(
   }
 
   if (!converged) {
-    newLayout = layoutDocument(blocks, measures, {
-      ...layoutOpts,
-      footnoteReservedHeights,
-    });
-    pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+    let fallbackReservedHeights = footnoteReservedHeights;
+    let fallbackCovered = false;
+    for (let pass = 0; pass < MAX_FOOTNOTE_LAYOUT_PASSES; pass++) {
+      newLayout = layoutDocument(blocks, measures, {
+        ...layoutOpts,
+        footnoteReservedHeights: fallbackReservedHeights,
+      });
+      pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+      const requiredHeights = calculateFootnoteReservedHeights(pageFootnoteMap, footnoteContentMap);
+      if (footnoteReservedHeightsCover(fallbackReservedHeights, requiredHeights)) {
+        fallbackCovered = true;
+        break;
+      }
+      fallbackReservedHeights = mergeFootnoteReservedHeights(
+        fallbackReservedHeights,
+        requiredHeights
+      );
+    }
+    if (!fallbackCovered) {
+      newLayout = layoutDocument(blocks, measures, {
+        ...layoutOpts,
+        footnoteReservedHeights: fallbackReservedHeights,
+      });
+      pageFootnoteMap = mapFootnotesToPages(newLayout.pages, footnoteRefs);
+    }
     console.warn(
       `[docx-editor] footnote layout did not stabilize within ${MAX_FOOTNOTE_LAYOUT_PASSES} passes; ` +
-        'settling with best-effort reservation. If footnotes appear misplaced, please file a bug with the document.'
+        'settling with conservative page reservations. If footnotes appear misplaced, please file a bug with the document.'
     );
   }
 

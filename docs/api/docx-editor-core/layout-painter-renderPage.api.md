@@ -134,6 +134,7 @@ export function h(container: HTMLElement, focusedIds: Set<string>): void;
 // @public
 export interface HeaderFooterContent {
     blocks: FlowBlock[];
+    flowHeight?: number;
     height: number;
     measures: Measure[];
     visualBottom?: number;
@@ -168,10 +169,7 @@ export const I: {
 };
 
 // @public
-export function i(imageEl: HTMLElement, zoom?: number): {
-    horizontalEmu: number;
-    verticalEmu: number;
-} | undefined;
+export function i(blocks: FlowBlock[], measures: Measure[]): B;
 
 // @public
 export function isFloatingImageRun(run: ImageRun): boolean;
@@ -180,10 +178,13 @@ export function isFloatingImageRun(run: ImageRun): boolean;
 export function isTextWrappingFloatingImageRun(run: ImageRun): boolean;
 
 // @public
-export function j(options?: P): f;
+export function j(imageEl: HTMLElement, zoom?: number): {
+    horizontalEmu: number;
+    verticalEmu: number;
+} | undefined;
 
 // @public
-export function k(wrapType: WrapType, cssFloat?: ImageAttrs['cssFloat'] | null): ImageLayoutTarget | null;
+export function k(options?: P): f;
 
 // @public
 export const L: {
@@ -196,16 +197,16 @@ export const L: {
 };
 
 // @public
-export function l(doc: Node_2, from: number, to: number): Set<string>;
+export function l(wrapType: WrapType, cssFloat?: ImageAttrs['cssFloat'] | null): ImageLayoutTarget | null;
 
 // @public
-export function m(target: EventTarget | null): HTMLElement | null;
+export function m(doc: Node_2, from: number, to: number): Set<string>;
 
 // @public
-export function n(target: EventTarget | null): c | null;
+export function n(target: EventTarget | null): HTMLElement | null;
 
 // @public
-export function o(_option: e, _currentWrapType: WrapType): boolean;
+export function o(target: EventTarget | null): c | null;
 
 // @public
 export interface P {
@@ -217,7 +218,7 @@ export interface P {
 }
 
 // @public
-export function p(fragment: ImageFragment, block: ImageBlock, _measure: ImageMeasure, _context: RenderContext, options?: RenderImageFragmentOptions): HTMLElement;
+export function p(_option: e, _currentWrapType: WrapType): boolean;
 
 // @public
 export const PAGE_CLASS_NAMES: {
@@ -228,7 +229,7 @@ export const PAGE_CLASS_NAMES: {
 };
 
 // @public
-export function q(block: ParagraphBlock, line: MeasuredLine, alignment: 'left' | 'center' | 'right' | 'justify' | undefined, doc: Document, options?: RenderLineOptions): HTMLElement;
+export function q(fragment: ImageFragment, block: ImageBlock, _measure: ImageMeasure, _context: RenderContext, options?: RenderImageFragmentOptions): HTMLElement;
 
 // @public
 export function r(fragment: Fragment, context: RenderContext, options?: RenderFragmentOptions): HTMLElement;
@@ -299,7 +300,15 @@ export function resolveHeaderFooterFloatingTablePosition(floating: NonNullable<T
 };
 
 // @public
-export function s(fragment: ParagraphFragment, block: ParagraphBlock, measure: ParagraphMeasure, context: RenderContext, options?: RenderParagraphOptions): HTMLElement;
+export function resolveHeaderFooterFloatLeft(width: number, h: {
+    relativeTo?: string;
+    posOffset?: number;
+    align?: string;
+    alignment?: string;
+} | undefined, layout: HeaderFooterLayoutInfo): string;
+
+// @public
+export function s(block: ParagraphBlock, line: MeasuredLine, alignment: 'left' | 'center' | 'right' | 'justify' | undefined, doc: Document, options?: RenderLineOptions): HTMLElement;
 
 // @public
 export const T: {
@@ -314,15 +323,18 @@ export const T: {
 };
 
 // @public
-export function t(fragment: TableFragment, block: TableBlock, measure: TableMeasure, context: RenderContext, options?: RenderTableFragmentOptions): HTMLElement;
+export function t(fragment: ParagraphFragment, block: ParagraphBlock, measure: ParagraphMeasure, context: RenderContext, options?: RenderParagraphOptions): HTMLElement;
 
 // @public
-export function u(fragment: TextBoxFragment, block: TextBoxBlock, measure: TextBoxMeasure, context: RenderContext, options?: RenderTextBoxFragmentOptions): HTMLElement;
+export function u(fragment: TableFragment, block: TableBlock, measure: TableMeasure, context: RenderContext, options?: RenderTableFragmentOptions): HTMLElement;
 
 // @public
-export function v(block: ParagraphBlock, line: MeasuredLine): Run[];
+export function v(fragment: TextBoxFragment, block: TextBoxBlock, measure: TextBoxMeasure, context: RenderContext, options?: RenderTextBoxFragmentOptions): HTMLElement;
 
 // @public
-export function w(value: string): ImageLayoutTarget | undefined;
+export function w(block: ParagraphBlock, line: MeasuredLine): Run[];
+
+// @public
+export function x(value: string): ImageLayoutTarget | undefined;
 
 ```

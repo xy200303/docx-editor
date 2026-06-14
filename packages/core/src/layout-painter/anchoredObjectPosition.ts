@@ -52,6 +52,21 @@ export function resolveAnchoredObjectPosition(
   return { x, y, side };
 }
 
+/**
+ * Content-area top Y (px) of an anchored object, resolving its OOXML vertical
+ * anchor (`page` / `margin` / `topMargin` / `bottomMargin` / `paragraph`, with
+ * `align` or `posOffset`). Exposed so the measure pipeline can reserve a
+ * `topAndBottom` band at the exact Y the painter will place the object —
+ * the two paths must not diverge (dual-renderer rule).
+ */
+export function resolveAnchoredObjectVerticalTop(
+  object: AnchoredObjectPositionInput,
+  fragmentY: number,
+  geometry?: PageGeometry
+): number {
+  return resolveVerticalAnchor(object, fragmentY, geometry);
+}
+
 function resolveHorizontalAnchor(
   object: AnchoredObjectPositionInput,
   contentWidth: number,

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   findClearLineY,
+  getFloatingMargins,
   MIN_WRAP_SEGMENT_WIDTH,
   rectsToFloatingZones,
   type FloatingImageZone,
@@ -86,6 +87,32 @@ describe('floating exclusion zones', () => {
     expect(zone?.rightMargin).toBe(100);
   });
 
+  test('topAndBottom builds a full-width band (no side wrap)', () => {
+    const [zone] = rectsToFloatingZones(
+      [
+        {
+          side: 'left',
+          x: 0,
+          y: -10,
+          width: 500,
+          height: 200,
+          distTop: 0,
+          distBottom: 0,
+          distLeft: 0,
+          distRight: 0,
+          wrapType: 'topAndBottom',
+        },
+      ],
+      500
+    );
+
+    expect(zone?.fullWidthBlock).toBe(true);
+    expect(zone?.leftMargin).toBe(0);
+    expect(zone?.rightMargin).toBe(0);
+    expect(zone?.topY).toBe(-10);
+    expect(zone?.bottomY).toBe(190);
+  });
+
   test('bothSides keeps splitting when both sides clear the minimum threshold', () => {
     const [zone] = rectsToFloatingZones(
       [
@@ -142,5 +169,33 @@ describe('findClearLineY', () => {
     ];
     // Line at Y=100 doesn't overlap, so the function returns Y=100 directly.
     expect(findClearLineY(100, 16, noProgress, 500, 24)).toBe(100);
+  });
+
+  test('pushes a line below a full-width topAndBottom band', () => {
+    const band: FloatingImageZone[] = [
+      { leftMargin: 0, rightMargin: 0, topY: 0, bottomY: 102, fullWidthBlock: true },
+    ];
+    // No text fits in the band → the line hops to its bottom.
+    expect(findClearLineY(0, 16, band, 500, 24)).toBe(102);
+    // Below the band there is full width again.
+    expect(findClearLineY(110, 16, band, 500, 24)).toBe(110);
+  });
+});
+
+describe('getFloatingMargins fullWidthBlock', () => {
+  test('a line overlapping a band gets zero available width', () => {
+    const band: FloatingImageZone[] = [
+      { leftMargin: 0, rightMargin: 0, topY: 0, bottomY: 102, fullWidthBlock: true },
+    ];
+    const margins = getFloatingMargins(10, 16, band, 0);
+    expect(margins.segments).toEqual([{ leftOffset: 0, availableWidth: 0 }]);
+  });
+
+  test('a line clear of the band is unobstructed', () => {
+    const band: FloatingImageZone[] = [
+      { leftMargin: 0, rightMargin: 0, topY: 0, bottomY: 102, fullWidthBlock: true },
+    ];
+    const margins = getFloatingMargins(120, 16, band, 0);
+    expect(margins).toEqual({ leftMargin: 0, rightMargin: 0 });
   });
 });

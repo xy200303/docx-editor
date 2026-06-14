@@ -16,6 +16,7 @@ import type {
   AbstractNumbering,
   NumberingInstance,
   ListLevel,
+  ListRendering,
   NumberFormat,
   LevelSuffix,
   ParagraphFormatting,
@@ -241,12 +242,25 @@ function parseListLevel(element: XmlElement): ListLevel | null {
     }
   }
 
-  // Parse number format
-  const numFmtEl = findChild(element, 'w', 'numFmt');
-  if (numFmtEl) {
-    const fmtVal = getAttribute(numFmtEl, 'w', 'val');
-    if (fmtVal) {
-      level.numFmt = parseNumberFormat(fmtVal);
+  // Parse number format. Word wraps custom formats in mc:AlternateContent —
+  // <mc:Choice Requires="w14"> holds <w:numFmt w:val="custom" w:format="..."/>
+  // and <mc:Fallback> holds the plain format for pre-w14 readers. Prefer the
+  // Choice when its format resolves to something we implement; otherwise the
+  // Fallback is the closer rendering (ECMA-376 Part 3 §10.2.1 — a consumer
+  // that doesn't understand a Choice must take the Fallback).
+  const directNumFmtEl = findChild(element, 'w', 'numFmt');
+  if (directNumFmtEl) {
+    level.numFmt = resolveNumFmt(directNumFmtEl) ?? 'decimal';
+  } else {
+    const alternate = findChild(element, 'mc', 'AlternateContent');
+    if (alternate) {
+      const choiceFmt = resolveNumFmt(
+        findChild(findChild(alternate, 'mc', 'Choice'), 'w', 'numFmt')
+      );
+      const fallbackFmt = resolveNumFmt(
+        findChild(findChild(alternate, 'mc', 'Fallback'), 'w', 'numFmt')
+      );
+      level.numFmt = choiceFmt ?? fallbackFmt ?? level.numFmt;
     }
   }
 
@@ -317,76 +331,108 @@ function parseListLevel(element: XmlElement): ListLevel | null {
   return level;
 }
 
-/**
- * Parse number format string to NumberFormat type
- */
-function parseNumberFormat(format: string): NumberFormat {
-  // Map of known formats
-  const formatMap: Record<string, NumberFormat> = {
-    decimal: 'decimal',
-    upperRoman: 'upperRoman',
-    lowerRoman: 'lowerRoman',
-    upperLetter: 'upperLetter',
-    lowerLetter: 'lowerLetter',
-    ordinal: 'ordinal',
-    cardinalText: 'cardinalText',
-    ordinalText: 'ordinalText',
-    hex: 'hex',
-    chicago: 'chicago',
-    bullet: 'bullet',
-    none: 'none',
-    decimalZero: 'decimalZero',
-    ganada: 'ganada',
-    chosung: 'chosung',
-    // CJK formats
-    ideographDigital: 'ideographDigital',
-    japaneseCounting: 'japaneseCounting',
-    aiueo: 'aiueo',
-    iroha: 'iroha',
-    decimalFullWidth: 'decimalFullWidth',
-    decimalHalfWidth: 'decimalHalfWidth',
-    japaneseLegal: 'japaneseLegal',
-    japaneseDigitalTenThousand: 'japaneseDigitalTenThousand',
-    decimalEnclosedCircle: 'decimalEnclosedCircle',
-    decimalFullWidth2: 'decimalFullWidth2',
-    aiueoFullWidth: 'aiueoFullWidth',
-    irohaFullWidth: 'irohaFullWidth',
-    decimalEnclosedFullstop: 'decimalEnclosedFullstop',
-    decimalEnclosedParen: 'decimalEnclosedParen',
-    decimalEnclosedCircleChinese: 'decimalEnclosedCircleChinese',
-    ideographEnclosedCircle: 'ideographEnclosedCircle',
-    ideographTraditional: 'ideographTraditional',
-    ideographZodiac: 'ideographZodiac',
-    ideographZodiacTraditional: 'ideographZodiacTraditional',
-    taiwaneseCounting: 'taiwaneseCounting',
-    ideographLegalTraditional: 'ideographLegalTraditional',
-    taiwaneseCountingThousand: 'taiwaneseCountingThousand',
-    taiwaneseDigital: 'taiwaneseDigital',
-    chineseCounting: 'chineseCounting',
-    chineseLegalSimplified: 'chineseLegalSimplified',
-    chineseCountingThousand: 'chineseCountingThousand',
-    koreanDigital: 'koreanDigital',
-    koreanCounting: 'koreanCounting',
-    koreanLegal: 'koreanLegal',
-    koreanDigital2: 'koreanDigital2',
-    vietnameseCounting: 'vietnameseCounting',
-    russianLower: 'russianLower',
-    russianUpper: 'russianUpper',
-    numberInDash: 'numberInDash',
-    hebrew1: 'hebrew1',
-    hebrew2: 'hebrew2',
-    arabicAlpha: 'arabicAlpha',
-    arabicAbjad: 'arabicAbjad',
-    hindiVowels: 'hindiVowels',
-    hindiConsonants: 'hindiConsonants',
-    hindiNumbers: 'hindiNumbers',
-    hindiCounting: 'hindiCounting',
-    thaiLetters: 'thaiLetters',
-    thaiNumbers: 'thaiNumbers',
-    thaiCounting: 'thaiCounting',
-  };
+/** Map of known `w:numFmt w:val` strings to NumberFormat values. */
+const formatMap: Record<string, NumberFormat> = {
+  decimal: 'decimal',
+  upperRoman: 'upperRoman',
+  lowerRoman: 'lowerRoman',
+  upperLetter: 'upperLetter',
+  lowerLetter: 'lowerLetter',
+  ordinal: 'ordinal',
+  cardinalText: 'cardinalText',
+  ordinalText: 'ordinalText',
+  hex: 'hex',
+  chicago: 'chicago',
+  bullet: 'bullet',
+  none: 'none',
+  decimalZero: 'decimalZero',
+  ganada: 'ganada',
+  chosung: 'chosung',
+  // CJK formats
+  ideographDigital: 'ideographDigital',
+  japaneseCounting: 'japaneseCounting',
+  aiueo: 'aiueo',
+  iroha: 'iroha',
+  decimalFullWidth: 'decimalFullWidth',
+  decimalHalfWidth: 'decimalHalfWidth',
+  japaneseLegal: 'japaneseLegal',
+  japaneseDigitalTenThousand: 'japaneseDigitalTenThousand',
+  decimalEnclosedCircle: 'decimalEnclosedCircle',
+  decimalFullWidth2: 'decimalFullWidth2',
+  aiueoFullWidth: 'aiueoFullWidth',
+  irohaFullWidth: 'irohaFullWidth',
+  decimalEnclosedFullstop: 'decimalEnclosedFullstop',
+  decimalEnclosedParen: 'decimalEnclosedParen',
+  decimalEnclosedCircleChinese: 'decimalEnclosedCircleChinese',
+  ideographEnclosedCircle: 'ideographEnclosedCircle',
+  ideographTraditional: 'ideographTraditional',
+  ideographZodiac: 'ideographZodiac',
+  ideographZodiacTraditional: 'ideographZodiacTraditional',
+  taiwaneseCounting: 'taiwaneseCounting',
+  ideographLegalTraditional: 'ideographLegalTraditional',
+  taiwaneseCountingThousand: 'taiwaneseCountingThousand',
+  taiwaneseDigital: 'taiwaneseDigital',
+  chineseCounting: 'chineseCounting',
+  chineseLegalSimplified: 'chineseLegalSimplified',
+  chineseCountingThousand: 'chineseCountingThousand',
+  koreanDigital: 'koreanDigital',
+  koreanCounting: 'koreanCounting',
+  koreanLegal: 'koreanLegal',
+  koreanDigital2: 'koreanDigital2',
+  vietnameseCounting: 'vietnameseCounting',
+  russianLower: 'russianLower',
+  russianUpper: 'russianUpper',
+  numberInDash: 'numberInDash',
+  hebrew1: 'hebrew1',
+  hebrew2: 'hebrew2',
+  arabicAlpha: 'arabicAlpha',
+  arabicAbjad: 'arabicAbjad',
+  hindiVowels: 'hindiVowels',
+  hindiConsonants: 'hindiConsonants',
+  hindiNumbers: 'hindiNumbers',
+  hindiCounting: 'hindiCounting',
+  thaiLetters: 'thaiLetters',
+  thaiNumbers: 'thaiNumbers',
+  thaiCounting: 'thaiCounting',
+};
 
-  return formatMap[format] ?? 'decimal';
+/**
+ * Resolve a `<w:numFmt>` element to a NumberFormat we can render, or null
+ * when the element is absent or its format is one we don't implement (an
+ * mc:Fallback can then supply a closer rendering).
+ */
+function resolveNumFmt(numFmtEl: XmlElement | null): NumberFormat | null {
+  if (!numFmtEl) return null;
+  const fmtVal = getAttribute(numFmtEl, 'w', 'val');
+  if (!fmtVal) return null;
+  if (fmtVal === 'custom') {
+    return parseCustomNumberFormat(getAttribute(numFmtEl, 'w', 'format'));
+  }
+  return formatMap[fmtVal] ?? null;
+}
+
+/**
+ * Map a `w:numFmt w:val="custom"` format string (ECMA-376 §17.9.17 — an XSLT
+ * `format` token list like "0001, 0002, 0003, ...") to a NumberFormat. Word
+ * only emits zero-padded decimal customs this way; the pad width is the digit
+ * count of the first token (clamped to 5). Unknown patterns return null so
+ * the caller can fall back to an mc:Fallback or plain decimal.
+ */
+function parseCustomNumberFormat(format: string | null): NumberFormat | null {
+  const firstToken = format?.split(',')[0]?.trim() ?? '';
+  if (/^0+1$/.test(firstToken)) {
+    switch (Math.min(firstToken.length, 5)) {
+      case 2:
+        return 'decimalZero';
+      case 3:
+        return 'decimalZero3';
+      case 4:
+        return 'decimalZero4';
+      case 5:
+        return 'decimalZero5';
+    }
+  }
+  return null;
 }
 
 /**
@@ -565,7 +611,24 @@ function parseLevelRunProps(rPr: XmlElement): TextFormatting {
 /**
  * Create a NumberingMap with helper functions
  */
-function createNumberingMap(definitions: NumberingDefinitions): NumberingMap {
+/**
+ * Per-definitions cache for `createNumberingMap`. Style application rebuilds
+ * the lookup map on every picker click otherwise; the definitions object is
+ * stable for a document's lifetime, so cache by identity (mirrors the
+ * adapters' `getCachedStyleResolver` pattern without threading a getter).
+ */
+const numberingMapCache = new WeakMap<NumberingDefinitions, NumberingMap>();
+
+export function getCachedNumberingMap(definitions: NumberingDefinitions): NumberingMap {
+  let map = numberingMapCache.get(definitions);
+  if (!map) {
+    map = createNumberingMap(definitions);
+    numberingMapCache.set(definitions, map);
+  }
+  return map;
+}
+
+export function createNumberingMap(definitions: NumberingDefinitions): NumberingMap {
   // Build lookup maps for efficient access
   const abstractMap = new Map<number, AbstractNumbering>();
   for (const abs of definitions.abstractNums) {
@@ -640,6 +703,54 @@ function createNumberingMap(definitions: NumberingDefinitions): NumberingMap {
 }
 
 /**
+ * Resolve a paragraph's `numPr` against the numbering definitions into the
+ * `ListRendering` the layout pipeline needs (marker template, per-level
+ * numFmts, counter key, start override). Returns null when the numPr doesn't
+ * name a real level — including `numId === 0`, "no numbering" per ECMA-376.
+ *
+ * Shared by the parser (document load) and `applyStyle` (style picker), so a
+ * style-attached list renders identically in both paths.
+ */
+export function computeListRendering(
+  numPr: { numId?: number; ilvl?: number },
+  numbering: NumberingMap
+): ListRendering | null {
+  const { numId, ilvl = 0 } = numPr;
+  if (numId === undefined || numId === 0) return null;
+
+  const level = numbering.getLevel(numId, ilvl);
+  if (!level) return null;
+
+  // Collect numFmts for levels 0..ilvl so multi-level templates like
+  // "%1.%2." can resolve each %N with its own format (e.g., upperRoman
+  // parent + decimal child).
+  const levelNumFmts: NumberFormat[] = [];
+  for (let i = 0; i <= ilvl; i += 1) {
+    const parent = numbering.getLevel(numId, i);
+    levelNumFmts.push(parent?.numFmt ?? 'decimal');
+  }
+
+  const instance = numbering.getInstance(numId);
+  const overrideForLevel = instance?.levelOverrides?.find((o) => o.ilvl === ilvl);
+
+  return {
+    level: ilvl,
+    numId,
+    marker: level.lvlText,
+    isBullet: level.numFmt === 'bullet',
+    numFmt: level.numFmt,
+    markerHidden: level.rPr?.hidden || undefined,
+    markerFontFamily: level.rPr?.fontFamily?.ascii || level.rPr?.fontFamily?.hAnsi || undefined,
+    // w:sz is in half-points; convert to points for downstream use
+    markerFontSize: level.rPr?.fontSize ? level.rPr.fontSize / 2 : undefined,
+    markerSuffix: level.suffix,
+    levelNumFmts,
+    abstractNumId: instance?.abstractNumId,
+    startOverride: overrideForLevel?.startOverride,
+  };
+}
+
+/**
  * Format a number according to the specified format
  *
  * @param num - The number to format
@@ -649,8 +760,19 @@ function createNumberingMap(definitions: NumberingDefinitions): NumberingMap {
 export function formatNumber(num: number, format: NumberFormat): string {
   switch (format) {
     case 'decimal':
-    case 'decimalZero':
       return num.toString();
+
+    case 'decimalZero':
+      return padDecimal(num, 2);
+
+    case 'decimalZero3':
+      return padDecimal(num, 3);
+
+    case 'decimalZero4':
+      return padDecimal(num, 4);
+
+    case 'decimalZero5':
+      return padDecimal(num, 5);
 
     case 'upperRoman':
       return toRoman(num).toUpperCase();
@@ -683,6 +805,12 @@ export function formatNumber(num: number, format: NumberFormat): string {
       // For CJK and other special formats, fall back to decimal
       return num.toString();
   }
+}
+
+/** Zero-pad a counter to `width` digits ("decimalZero" family, §17.18.59). */
+export function padDecimal(num: number, width: number): string {
+  if (num < 0) return num.toString();
+  return num.toString().padStart(width, '0');
 }
 
 /**

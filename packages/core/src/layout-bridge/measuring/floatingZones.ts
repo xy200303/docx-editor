@@ -24,6 +24,11 @@ export interface FloatingImageZone {
   topY: number;
   bottomY: number;
   segments?: FloatingLineSegmentZone[];
+  /**
+   * Full-width vertical band (OOXML `topAndBottom` wrap): no text fits beside
+   * it, so any line overlapping `[topY, bottomY]` is pushed below the band.
+   */
+  fullWidthBlock?: boolean;
 }
 
 export interface FloatingLineSegmentZone {
@@ -46,6 +51,18 @@ export function rectsToFloatingZones(
     const rectRight = rect.x + rect.width + rect.distRight;
     const rectTop = rect.y - rect.distTop;
     const rectBottom = rect.y + rect.height + rect.distBottom;
+
+    // topAndBottom: full-width band, no side wrap. Lines overlapping the band
+    // flow above/below it (handled in getFloatingMargins / findClearLineY).
+    if (rect.wrapType === 'topAndBottom') {
+      return {
+        leftMargin: 0,
+        rightMargin: 0,
+        topY: rectTop,
+        bottomY: rectBottom,
+        fullWidthBlock: true,
+      };
+    }
 
     let leftMargin = 0;
     let rightMargin = 0;
@@ -107,6 +124,11 @@ export function getFloatingMargins(
 
   for (const zone of zones) {
     if (absoluteLineBottom <= zone.topY || absoluteLineTop >= zone.bottomY) continue;
+    if (zone.fullWidthBlock) {
+      // No room beside a full-width band: a zero-width segment forces the
+      // available width to 0, which findClearLineY uses to push the line below.
+      return { leftMargin: 0, rightMargin: 0, segments: [{ leftOffset: 0, availableWidth: 0 }] };
+    }
     if (zone.segments?.length) {
       segments = segments ? intersectSegments(segments, zone.segments) : zone.segments;
       continue;

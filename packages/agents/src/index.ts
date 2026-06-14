@@ -46,12 +46,7 @@ export type {
   InsertImageOptions,
 } from './types';
 
-export {
-  TextNotFoundError,
-  ChangeNotFoundError,
-  CommentNotFoundError,
-  NoteChangeNotEditableError,
-} from './errors';
+export { TextNotFoundError, ChangeNotFoundError, CommentNotFoundError } from './errors';
 
 // Tools — reusable tool definitions for AI agents (OpenAI function calling format)
 export { agentTools, executeToolCall, getToolSchemas } from './tools';

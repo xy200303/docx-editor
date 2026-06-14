@@ -85,6 +85,7 @@ Stable dataset attrs on painted DOM (CSS, queries, selection map depend on these
 - `data-change-author`/`data-change-date`/`data-revision-id` — tracked changes
 - `data-continues-from-prev`/`data-continues-on-next` — split paragraphs
 - `data-flex-line` — flex-promoted lines (image-aligned, right-tab); `renderParagraphFragment` suppresses `text-indent` on these (would apply per-flex-item)
+- `data-vmerge-continuation` — synthetic slice of a vertically-merged cell re-painted on a continuation page (not selectable); `.layout-table-cut-border` — the horizontal rule that closes a table fragment at a page break. Tables split across pages via `TableFragment.fromRow/toRow` + `topClip`/`bottomClip` (mid-content row break).
 
 ### Key file map
 
@@ -93,6 +94,9 @@ Stable dataset attrs on painted DOM (CSS, queries, selection map depend on these
 | Text/paragraph rendering    | `layout-painter/renderParagraph.ts`                             |
 | Image rendering             | `layout-painter/renderImage.ts`                                 |
 | Table rendering             | `layout-painter/renderTable.ts`                                 |
+| Table borders / cut edges   | `layout-painter/renderTableBorders.ts`                          |
+| Table grid geometry (SoT)   | `layout-bridge/tableWidthUtils.ts` (`resolveCellGrid`)          |
+| Table page-break geometry   | `layout-engine/tableRowBreak.ts`                                |
 | Page composition            | `layout-painter/renderPage.ts`                                  |
 | Formatting commands         | `prosemirror/extensions/marks/`, `nodes/`                       |
 | Keyboard shortcuts          | `prosemirror/extensions/features/BaseKeymapExtension.ts`        |
@@ -115,6 +119,19 @@ Stable dataset attrs on painted DOM (CSS, queries, selection map depend on these
 | Main toolbar                | `components/Toolbar.tsx`                                        |
 | Editor CSS                  | `prosemirror/editor.css`                                        |
 
+Shared React/Vue orchestration lives in core (issue #696, Tier 1) — adapters re-export or delegate, so grepping an adapter lands on a thin wrapper:
+
+| Shared op                           | Core module (in `@eigenpal/docx-editor-core`) |
+| ----------------------------------- | --------------------------------------------- |
+| paraId/text helpers                 | `prosemirror/paraText.ts`                     |
+| ref-API queries (find/selInfo/page) | `prosemirror/queries.ts`                      |
+| agent applyFormatting/setParaStyle  | `prosemirror/applyFormatting.ts`              |
+| comment/proposeChange + ID alloc    | `prosemirror/commentOps.ts`                   |
+| table-resize read/commit + twips    | `prosemirror/tableResize.ts`                  |
+| image resize/drag PM commits        | `prosemirror/imageCommit.ts`                  |
+| cell-selection highlight            | `layout-bridge/cellSelectionHighlight.ts`     |
+| drag auto-scroll delta math         | `utils/autoScroll.ts`                         |
+
 ### Extensions
 
 `src/prosemirror/extensions/` — `nodes/`, `marks/`, `features/`. `StarterKit.ts` bundles all. `ExtensionManager.buildSchema()` (sync) → `initializeRuntime()` (post EditorState). Singleton in `schema/index.ts`.
@@ -127,6 +144,8 @@ Stable dataset attrs on painted DOM (CSS, queries, selection map depend on these
 - **No `require()`** — ESM only.
 
 OOXML reference: `reference/quick-ref/wordprocessingml.md`, `themes-colors.md`; schemas in `reference/ecma-376/part1/schemas/`. PDFs in `reference/ecma-376/` are gitignored — run `bun run reference:fetch` once when you need them.
+
+Website docs (docx-editor.dev/docs/1.x) are authored here in `docs/site/content/` (MDX) and synced by the site repo at build time — see `docs/site/README.md` for the authoring contract. Feature-support claims live in `docs/site/data/word-features.ts` (typed matrix), never hand-written in prose. A feature PR that changes user-visible behavior should update both in the same PR.
 
 ---
 

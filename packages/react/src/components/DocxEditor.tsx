@@ -331,6 +331,36 @@ export interface DocxEditorRef {
    * @example ref.current?.scrollToPosition(42)
    */
   scrollToPosition: (pmPos: number) => void;
+  /**
+   * Scroll the paginated view to the comment with the given id and select its
+   * anchored range so the selection overlay highlights it. Resolves the id
+   * against the live comment marks at call time.
+   * @returns `false` when the id no longer resolves (the comment was deleted
+   *   or its anchored text removed between render and click), so the caller
+   *   can surface a "location no longer exists" affordance rather than
+   *   silently no-op'ing.
+   * @example ref.current?.scrollToCommentId(3)
+   */
+  scrollToCommentId: (commentId: number) => boolean;
+  /**
+   * Scroll the paginated view to the tracked change with the given Word
+   * revision `w:id` and select its range so the selection overlay highlights
+   * it. Resolves the id against the live tracked-change marks at call time
+   * (matching coalesced revisions the way the changes sidebar does).
+   * @returns `false` when the id no longer resolves (the change was
+   *   accepted, rejected, or deleted between render and click).
+   * @example ref.current?.scrollToChangeId(42)
+   */
+  scrollToChangeId: (revisionId: number) => boolean;
+  /**
+   * Select the ProseMirror position range `[from, to]` so the selection
+   * overlay highlights it, and scroll its start into view. The selection
+   * persists until it next changes (there is no auto-clearing flash). No-op
+   * for a malformed range or a `from` past the document end; `to` is clamped
+   * to the document size.
+   * @example ref.current?.highlightRange(10, 24)
+   */
+  highlightRange: (from: number, to: number) => void;
   /** Open print preview */
   openPrintPreview: () => void;
   /** Print the document directly */
@@ -529,6 +559,7 @@ import {
   PENDING_COMMENT_ID,
   EMPTY_ANCHOR_POSITIONS,
   createComment,
+  createCommentIdAllocator,
 } from './DocxEditor/commentFactories';
 
 /**
@@ -776,6 +807,11 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const commentsLoadedRef = useRef(false);
   const trackedChangesLoadedRef = useRef(false);
 
+  // One comment/revision ID allocator per editor instance (monotonic, no reuse).
+  // Seeded above the loaded doc's max ID on load; shared by every comment/
+  // tracked-change allocation in this component and its hooks.
+  const commentIdAllocatorRef = useRef(createCommentIdAllocator());
+
   const { resetForNewDocument } = useResetEditorState({
     commentsLoadedRef,
     trackedChangesLoadedRef,
@@ -808,6 +844,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     onError,
     resetForNewDocument,
     commentsLoadedRef,
+    commentIdAllocator: commentIdAllocatorRef.current,
   });
 
   const {
@@ -1160,6 +1197,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
     contentChangeSubscribersRef,
     selectionChangeSubscribersRef,
     getCachedStyleResolver,
+    commentIdAllocator: commentIdAllocatorRef.current,
   });
 
   const initialSectionProperties = useMemo(
@@ -1213,7 +1251,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
   const commentCallbacksRef = useRef<CommentCallbacks>({});
   commentCallbacksRef.current = {
     onCommentReply: (id, text) => {
-      const reply = createComment(text, author, id);
+      const reply = createComment(commentIdAllocatorRef.current, text, author, id);
       const parent = comments.find((c) => c.id === id);
       setComments((prev) => [...prev, reply]);
       if (parent) onCommentReply?.(reply, parent);
@@ -1248,7 +1286,7 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       if (target) onCommentDelete?.(target);
     },
     onAddComment: (addText) => {
-      const comment = createComment(addText, author);
+      const comment = createComment(commentIdAllocatorRef.current, addText, author);
       const view = pagedEditorRef.current?.getView();
       if (view && commentSelectionRange) {
         const { from, to } = commentSelectionRange;
@@ -1300,7 +1338,10 @@ export const DocxEditor = forwardRef<DocxEditorRef, DocxEditorProps>(function Do
       if (view) rejectChangeById(revisionId)(view.state, view.dispatch);
     },
     onTrackedChangeReply: (revisionId, text) => {
-      setComments((prev) => [...prev, createComment(text, author, revisionId)]);
+      setComments((prev) => [
+        ...prev,
+        createComment(commentIdAllocatorRef.current, text, author, revisionId),
+      ]);
     },
   };
 

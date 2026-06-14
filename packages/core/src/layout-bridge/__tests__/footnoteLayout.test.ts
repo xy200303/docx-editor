@@ -3,10 +3,13 @@ import {
   calculateFootnoteReservedHeights,
   collectFootnoteRefs,
   FOOTNOTE_SEPARATOR_HEIGHT,
+  mapFootnotesToPages,
 } from '../footnoteLayout';
 import type {
   FlowBlock,
   ParagraphBlock,
+  ParagraphFragment,
+  Page,
   TableBlock,
   TextBoxBlock,
 } from '../../layout-engine/types';
@@ -123,5 +126,62 @@ describe('collectFootnoteRefs', () => {
     };
 
     expect(collectFootnoteRefs([textBox])).toEqual([{ footnoteId: 9, pmPos: 50 }]);
+  });
+});
+
+describe('mapFootnotesToPages', () => {
+  test('uses split paragraph fragment ranges instead of the whole paragraph range', () => {
+    const pages: Page[] = [
+      {
+        number: 1,
+        fragments: [
+          {
+            kind: 'paragraph',
+            blockId: 'p1',
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 40,
+            fromLine: 0,
+            toLine: 2,
+            pmStart: 9,
+            pmEnd: 22,
+          } as ParagraphFragment,
+        ],
+        margins: { top: 20, right: 20, bottom: 20, left: 20 },
+        size: { w: 300, h: 80 },
+      },
+      {
+        number: 2,
+        fragments: [
+          {
+            kind: 'paragraph',
+            blockId: 'p1',
+            x: 0,
+            y: 20,
+            width: 100,
+            height: 20,
+            fromLine: 2,
+            toLine: 3,
+            pmStart: 22,
+            pmEnd: 30,
+          } as ParagraphFragment,
+        ],
+        margins: { top: 20, right: 20, bottom: 20, left: 20 },
+        size: { w: 300, h: 80 },
+      },
+    ];
+
+    expect(
+      mapFootnotesToPages(pages, [
+        { footnoteId: 1, pmPos: 16 },
+        { footnoteId: 2, pmPos: 22 },
+      ])
+    ).toEqual(
+      new Map([
+        [1, [1]],
+        [2, [2]],
+      ])
+    );
   });
 });

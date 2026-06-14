@@ -32,14 +32,20 @@
  * that read them (margin markers, sidebar) keep a single source of truth.
  */
 
-import { ref, onMounted, onBeforeUnmount, watch, type Ref } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, unref, type MaybeRef, type Ref } from 'vue';
 import type { EditorView } from 'prosemirror-view';
 import type { Document } from '@eigenpal/docx-editor-core/types/document';
 import type { Comment } from '@eigenpal/docx-editor-core/types/content';
 import { extractTrackedChanges } from '@eigenpal/docx-editor-core/prosemirror/utils/extractTrackedChanges';
 import { findElementAtPosition } from '../utils/domQueries';
-import { createComment as createCommentImpl } from '../utils/commentFactories';
+import { createComment as createCommentCore } from '@eigenpal/docx-editor-core/prosemirror/commentOps';
+import {
+  seedCommentAllocator,
+  PENDING_COMMENT_ID,
+  type CommentIdAllocator,
+} from '@eigenpal/docx-editor-core/prosemirror/commentIdAllocator';
 import type { TrackedChangeEntry } from '../components/sidebar/sidebarUtils';
+import type { CommentCallbacks } from './useCommentManagement';
 
 export interface UseCommentLifecycleOptions {
   editorView: Ref<EditorView | null>;
@@ -47,6 +53,8 @@ export interface UseCommentLifecycleOptions {
   comments: Ref<Comment[]>;
   trackedChanges: Ref<TrackedChangeEntry[]>;
   resolvedCommentIds: Ref<Set<number>>;
+  /** Shared per-instance ID allocator (see useCommentManagement). */
+  commentIdAllocator: CommentIdAllocator;
   activeSidebarItem: Ref<string | null>;
   showSidebar: Ref<boolean>;
   isAddingComment: Ref<boolean>;
@@ -56,6 +64,10 @@ export interface UseCommentLifecycleOptions {
   pagesRef: Ref<HTMLElement | null>;
   pagesViewportRef: Ref<HTMLElement | null>;
   emit: (event: string, ...args: unknown[]) => void;
+  /** Author name for UI-created comments (the `author` prop). */
+  author?: MaybeRef<string>;
+  /** Host-facing comment lifecycle callbacks (the `onComment*` props). */
+  commentCallbacks?: CommentCallbacks;
 }
 
 export function useCommentLifecycle(opts: UseCommentLifecycleOptions) {
@@ -155,7 +167,7 @@ export function useCommentLifecycle(opts: UseCommentLifecycleOptions) {
         // Skip resolved threads + the pending -1 placeholder so the
         // sidebar doesn't refocus while the user is typing in
         // AddCommentCard.
-        if (cid === -1) continue;
+        if (cid === PENDING_COMMENT_ID) continue;
         if (opts.resolvedCommentIds.value.has(cid)) continue;
         nextItem = `comment-${cid}`;
         break;
@@ -195,7 +207,11 @@ export function useCommentLifecycle(opts: UseCommentLifecycleOptions) {
     // for submit.
     const commentMark = view.state.schema.marks.comment;
     if (commentMark) {
-      const tr = view.state.tr.addMark(from, to, commentMark.create({ commentId: -1 }));
+      const tr = view.state.tr.addMark(
+        from,
+        to,
+        commentMark.create({ commentId: PENDING_COMMENT_ID })
+      );
       view.dispatch(tr);
     }
     opts.showSidebar.value = true;
@@ -209,9 +225,17 @@ export function useCommentLifecycle(opts: UseCommentLifecycleOptions) {
     if (!doc?.package) return;
     if (!doc.package.document.comments) doc.package.document.comments = [];
 
-    const newComment = createCommentImpl(doc.package.document.comments, text, 'User');
+    seedCommentAllocator(opts.commentIdAllocator, doc.package.document.comments, view);
+    const newComment = createCommentCore(
+      opts.commentIdAllocator,
+      text,
+      unref(opts.author) ?? 'User'
+    );
     doc.package.document.comments.push(newComment);
     opts.comments.value = [...doc.package.document.comments];
+    // Match React's order: the full-array change fires before the granular add.
+    opts.commentCallbacks?.onCommentsChange?.(opts.comments.value);
+    opts.commentCallbacks?.onCommentAdd?.(newComment);
 
     // Swap the pending `commentId: -1` mark for the real id over the
     // captured range so the layout-painter writes [data-comment-id="N"].

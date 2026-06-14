@@ -454,12 +454,16 @@ function convertTableRow(
   });
 
   const attrs = node.attrs;
+  // `w:cantSplit` (§17.4.6) is preserved only in _originalFormatting; surface it
+  // so the layout engine keeps the row whole across page boundaries.
+  const rowFormatting = attrs._originalFormatting as { cantSplit?: boolean } | null | undefined;
   return {
     id: nextBlockId(),
     cells,
     height: attrs.height ? twipsToPixels(attrs.height as number) : undefined,
     heightRule: (attrs.heightRule as 'auto' | 'atLeast' | 'exact') ?? undefined,
     isHeader: attrs.isHeader as boolean | undefined,
+    cantSplit: rowFormatting?.cantSplit || undefined,
     trackedIns:
       (attrs.trIns as import('../types/content/trackedChange').RevisionInfo | null) ?? undefined,
     trackedDel:

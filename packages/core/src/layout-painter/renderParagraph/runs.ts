@@ -253,6 +253,24 @@ export function applyPmPositions(element: HTMLElement, pmStart?: number, pmEnd?:
   }
 }
 
+function applyInlineSdtWidgetAttrs(element: HTMLElement, run: TextRun): void {
+  const widget = run.inlineSdtWidget;
+  if (!widget) return;
+  element.classList.add('layout-inline-sdt-widget');
+  element.dataset.sdtWidget = widget.kind;
+  element.dataset.sdtGroupId = widget.groupId;
+  element.dataset.sdtPos = String(widget.pos);
+  if (widget.tag) element.dataset.sdtTag = widget.tag;
+  if (widget.alias) element.dataset.sdtAlias = widget.alias;
+  if (typeof widget.checked === 'boolean') {
+    element.dataset.sdtChecked = String(widget.checked);
+    element.setAttribute('aria-checked', String(widget.checked));
+  }
+  element.setAttribute('role', 'checkbox');
+  element.setAttribute('tabindex', '0');
+  element.setAttribute('aria-label', widget.alias || widget.tag || 'Checkbox content control');
+}
+
 /**
  * Render a text run
  */
@@ -266,6 +284,7 @@ export function renderTextRun(
 
   applyRunStyles(span, run, resolvedCommentIds);
   applyPmPositions(span, run.pmStart, run.pmEnd);
+  applyInlineSdtWidgetAttrs(span, run);
 
   // Handle hyperlinks
   if (run.hyperlink) {
@@ -480,6 +499,19 @@ function renderInlineImageRun(run: ImageRun, doc: Document): HTMLElement {
   // center with visible padding above and below, matching Word's render. (Pure
   // baseline/top would land flush with the line edge.)
   img.style.verticalAlign = 'middle';
+
+  // Fit the image to its container's content width (the text column or table
+  // cell) while preserving the run's aspect ratio: cap the width at 100% of the
+  // container and let `aspect-ratio` drive the height. Without this, a wide
+  // image in a narrow cell squashes (the explicit height stays while the width
+  // is clamped) or overflows the page entirely. The run's own aspect is used —
+  // not the image's natural aspect — so a deliberately stretched image keeps
+  // its shape. Behaves identically in React and Vue (both use this painter).
+  if (run.width > 0 && run.height > 0) {
+    img.style.height = 'auto';
+    img.style.aspectRatio = `${run.width} / ${run.height}`;
+    img.style.maxWidth = '100%';
+  }
 
   applyInlineImageDist(img, run);
   applyPmPositions(img, run.pmStart, run.pmEnd);

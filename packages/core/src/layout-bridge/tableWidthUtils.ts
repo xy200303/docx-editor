@@ -26,6 +26,54 @@ export function resolveTableWidthPx(
   return undefined;
 }
 
+/** A cell with its resolved grid position (column index honoring spans). */
+export interface ResolvedGridCell {
+  rowIndex: number;
+  cellIndex: number;
+  columnIndex: number;
+  colSpan: number;
+  rowSpan: number;
+}
+
+/**
+ * Resolve every cell's grid column index, accounting for `colSpan` and the
+ * columns occupied by vertically-merged (`rowSpan`) cells from earlier rows.
+ *
+ * Single source of truth for table grid geometry — the measurer, the painter,
+ * and the row-break paginator all consume this so they agree on which column a
+ * cell lives in. Width-free on purpose: callers multiply `columnIndex` by their
+ * own (possibly scaled) column widths to get an x offset.
+ *
+ * @internal
+ */
+export function resolveCellGrid(tableBlock: TableBlock): ResolvedGridCell[] {
+  const occupied = new Map<number, Set<number>>();
+  const out: ResolvedGridCell[] = [];
+  for (let rowIndex = 0; rowIndex < tableBlock.rows.length; rowIndex++) {
+    const cells = tableBlock.rows[rowIndex]?.cells ?? [];
+    const occ = occupied.get(rowIndex) ?? new Set<number>();
+    let columnIndex = 0;
+    while (occ.has(columnIndex)) columnIndex++;
+    for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+      const cell = cells[cellIndex];
+      if (!cell) continue;
+      const colSpan = cell.colSpan ?? 1;
+      const rowSpan = cell.rowSpan ?? 1;
+      out.push({ rowIndex, cellIndex, columnIndex, colSpan, rowSpan });
+      if (rowSpan > 1) {
+        for (let r = rowIndex + 1; r < rowIndex + rowSpan; r++) {
+          if (!occupied.has(r)) occupied.set(r, new Set());
+          const s = occupied.get(r)!;
+          for (let c = 0; c < colSpan; c++) s.add(columnIndex + c);
+        }
+      }
+      columnIndex += colSpan;
+      while (occ.has(columnIndex)) columnIndex++;
+    }
+  }
+  return out;
+}
+
 /** Total grid columns, derived from the widest row's accumulated colSpans. */
 export function countTableColumns(tableBlock: TableBlock): number {
   return Math.max(

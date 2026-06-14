@@ -92,6 +92,8 @@ export {
   preloadCommonFonts,
   loadDocumentFonts,
   isFontLoaded,
+  setGoogleFontsEnabled,
+  isGoogleFontsEnabled,
   isLoading,
   getLoadedFonts,
   onFontsLoaded,

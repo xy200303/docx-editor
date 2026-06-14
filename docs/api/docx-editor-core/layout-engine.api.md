@@ -160,6 +160,9 @@ export type FloatingTablePosition = {
 };
 
 // @public
+export function floatingTextBoxReservesBand(block: TextBoxFlowAttrs): boolean;
+
+// @public
 export function floatingTextBoxWrapsText(block: TextBoxFlowAttrs): boolean;
 
 // @public
@@ -314,6 +317,17 @@ export type ImageRunPosition = {
         align?: string;
     };
 };
+
+// @public
+export interface InlineSdtWidget {
+    alias?: string;
+    checked?: boolean;
+    groupId: string;
+    // (undocumented)
+    kind: 'checkbox';
+    pos: number;
+    tag?: string;
+}
 
 // @public
 export function isFloatingTextBoxBlock(block: TextBoxFlowAttrs): boolean;
@@ -760,6 +774,8 @@ export type TableFragment = FragmentBase & {
     continuesFromPrev?: boolean;
     continuesOnNext?: boolean;
     headerRowCount?: number;
+    topClip?: number;
+    bottomClip?: number;
 };
 
 // @public
@@ -778,6 +794,7 @@ export type TableRow = {
     height?: number;
     heightRule?: 'auto' | 'atLeast' | 'exact';
     isHeader?: boolean;
+    cantSplit?: boolean;
     trackedIns?: RevisionInfo;
     trackedDel?: RevisionInfo;
 };
@@ -861,6 +878,7 @@ export type TextRun = RunFormatting & {
     hyperlink?: HyperlinkInfo;
     pmStart?: number;
     pmEnd?: number;
+    inlineSdtWidget?: InlineSdtWidget;
 };
 
 // @public
